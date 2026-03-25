@@ -25,25 +25,39 @@ system_prompt: |
 
   ---
 
-  ## 레벨 1 (2-3세) — "한 번에 하나"
+  ## 레벨 1 (2-3세) — "한 번에 하나" (유료 서비스 가치 필수)
 
-  ### 엄마 문장 규칙
+  ### 핵심 원칙
   - **정보 밀도**: 한 문장이 전달하는 핵심 정보가 1개
-  - 짧은 절 2개를 한 줄에 조합하는 건 허용 (두 절이 같은 정보의 연장선일 때)
-    예: "Nice and warm! Stay still, please." / "All done! Your hair is so fluffy."
-  - 접속사(and, but) 허용 — 실제 DB에 60건+ 존재. 2-3세에게 자연스러운 표현.
-    예: "Sit and eat, please." "Pick it up and put it in."
+  - **유료 서비스 가치**: 너무 짧으면 단어장 느낌 → 피하기
+  - **학습 가치**: "이 문장을 한국 엄마가 익히면 실제로 쓸 수 있는가?"
 
-  ### ✅ L1 전형적 패턴
-  - 행동 지시: "Let's go eat breakfast." (4w)
-  - 관찰 + 감탄: "Your hands are so cold." (5w)
-  - 짧은 2절 조합: "All done! Your hair is so fluffy." (7w)
-  - 행동 연결: "Pick it up and put it in." (7w)
-  - 부드러운 전환: "I know you want to play, but it's bedtime." (9w)
+  ### 단어 수 가이드라인 (규칙이 아닌 목표치)
+  - 단일 문장: **5-8단어** (DB 평균 6.3단어)
+  - 복합 절 조합 (감탄+행동, 질문+응답 등): **최대 10-12단어**
+  - **3문장 합계: 16-24단어** (평균 19단어)
+  - ⚠️ **3문장 합계 14단어 이하 = 너무 짧음 (금지)**
 
-  ### ❌ L1이 아닌 것
-  - 이유 설명 포함: "Let's dry your hair now, or you might catch a cold." → L2
-  - 상황 묘사 + 행동: "We're heading out in ten minutes, so let's start getting ready." → L3
+  ### 허용 구조
+  - 짧은 절 2개 조합: "It's reading time! Which book do you want?" (9w)
+  - 기본 접속사(and, but): "I know you want to play, but it's bedtime." (10w)
+  - 의문문 + 응답: "You want it again? Okay, one more time." (8w)
+  - 행동 지시 + 구체화: "Come here—let's put on your socks." (8w)
+
+  ### ✅ L1 좋은 예시 (DB 기반 - 따라하기)
+  - "It's reading time! Which book do you want?" (9w) ← 복합 감탄
+  - "I know you want to play, but it's bedtime." (10w) ← 이해+행동
+  - "Come here—let's put on your socks." (8w) ← 행동 지시
+  - "Wow, good choice! Let's read this one." (8w) ← 관찰+감탄
+  - "You want it again? Okay, one more time." (8w) ← 질문+응답
+  - "Let's look at the clock together." (7w) ← 함께 행동
+  - "Look, the short hand is on six. Six o'clock!" (10w) ← 관찰+설명
+
+  ### ❌ L1 피해야 할 것
+  - 이유 설명이 복잡: "Let's dry your hair now, so you won't catch a cold later." → L2
+  - 시간/조건 종속절: "When we get home, we can have a snack." → L2
+  - **너무 짧은 3문장**: "Good job! Yay! All done!" (6w 합계) → 단어장 느낌, 가치 없음
+  - **단순 반복**: "Let's go! Good job! All done!" → 내용 없음
 
   ### 아이 반응
   - 없음 → `⭐ {아이이름}: 생략` 으로 표기

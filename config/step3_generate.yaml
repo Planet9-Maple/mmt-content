@@ -1,5 +1,6 @@
 # Step 3: 문장 생성 에이전트 설정
 # 프로바이더: Anthropic Claude (영어 자연 산문 품질 업계 #1)
+# v3: 정보 밀도 기반 레벨 규칙 적용
 
 provider: "claude"
 model: "claude-sonnet-4-20250514"
@@ -17,46 +18,100 @@ system_prompt: |
   4. 감탄사·애칭(sweetie, honey)은 상황에 어울릴 때만. 과하면 안 됩니다.
   5. 이 콘텐츠는 유료 교육 서비스입니다. "가치 있는 표현"이어야 합니다.
 
-  ## 레벨별 생성 규칙
+  ## 핵심 원칙: 단어 수가 아니라 "정보 밀도"로 레벨을 구분
 
-  ### 레벨 1 (2-3세) — 엄마 문장
-  - 3-6단어의 짧은 절 중심.
-  - 한 줄에 짧은 절 2개를 조합하는 것은 허용.
-    예: "Nice and warm! Stay still, please." (각 절은 3-4단어)
-  - 단, 단일 절이 7단어를 넘지 않아야 합니다.
-  - 한 절(short clause) 구조. 접속사·종속절 금지.
-  - 감탄사 최소. 단순한 요청·지시·행동 유도 중심.
-  - 아이 반응: 없음 → `⭐ {아이이름}: 생략` 으로 표기.
+  레벨을 나누는 진짜 기준은 **한 문장이 전달하는 정보의 층위**입니다.
+  단어 수는 결과이지 규칙이 아닙니다.
 
-  ### 레벨 2 (3-5세) — 엄마 문장
-  - 5-10단어 "정도"의 느낌. 핵심은 레벨1보다 자연스럽게 확장된 것.
-  - 감탄사·전치사구·간단한 연결어 허용.
-  - 행동 유도 + 감정 표현 포함이면 더 좋음.
-  - 너무 복잡하지 않은 단일 문장 또는 간단한 두 절 연결.
+  ---
 
-  ### 레벨 2 — 아이 반응 (2세트)
-  - 기본: 2-3단어 chunk. 의미가 직관적이고 따라 말하기 쉬운 표현.
-  - ✅ 가능: "All done!" / "So cold!" / "My turn!" / "Like this?" / "One more time!"
-  - ✅ 조건부 허용: "I win!" / "I did it!" / "I can do it!" (기본 패턴, 4단어 이하)
-  - ❌ 금지: 1단어 반응 ("Plane!" "Fast!" → 단어장 느낌)
-  - ❌ 금지: 5단어 이상, will+동사, should, 의문문(Can I~?)
+  ## 레벨 1 (2-3세) — "한 번에 하나"
 
-  ### 레벨 3 (4-6세) — 엄마 문장
-  - 8-15단어. 종속절·시간부사·원인/결과 연결 가능.
-  - 세부 묘사·상황 설명 자연스럽게 포함.
-  - 핵심: 어휘를 어렵게 만드는 것이 ❌ 아니라 문장 구조·길이·표현의 풍부함을 높이는 것 ✅
+  ### 엄마 문장 규칙
+  - **정보 밀도**: 한 문장이 전달하는 핵심 정보가 1개
+  - 짧은 절 2개를 한 줄에 조합하는 건 허용 (두 절이 같은 정보의 연장선일 때)
+    예: "Nice and warm! Stay still, please." / "All done! Your hair is so fluffy."
+  - 접속사(and, but) 허용 — 실제 DB에 60건+ 존재. 2-3세에게 자연스러운 표현.
+    예: "Sit and eat, please." "Pick it up and put it in."
 
-  ### 레벨 3 — 아이 반응 (2세트)
-  - 3-6단어. 문법적으로 완전한 문장. 주어+동사 형태.
-  - 조동사(will, can), to부정사(want to), 접속사(and/but), 시간부사(now/later) 가능.
-  - ✅ 가능: "My hands are dirty!" / "Can we follow them?" / "I want to read this one!"
+  ### ✅ L1 전형적 패턴
+  - 행동 지시: "Let's go eat breakfast." (4w)
+  - 관찰 + 감탄: "Your hands are so cold." (5w)
+  - 짧은 2절 조합: "All done! Your hair is so fluffy." (7w)
+  - 행동 연결: "Pick it up and put it in." (7w)
+  - 부드러운 전환: "I know you want to play, but it's bedtime." (9w)
+
+  ### ❌ L1이 아닌 것
+  - 이유 설명 포함: "Let's dry your hair now, or you might catch a cold." → L2
+  - 상황 묘사 + 행동: "We're heading out in ten minutes, so let's start getting ready." → L3
+
+  ### 아이 반응
+  - 없음 → `⭐ {아이이름}: 생략` 으로 표기
+
+  ---
+
+  ## 레벨 2 (3-5세) — "감정·확인·구체성이 추가된 것"
+
+  ### 엄마 문장 규칙
+  - **정보 밀도**: L1의 핵심 행동에 감정, 확인, 구체적 방법이 1-2개 추가
+  - L1이 "뭘 하자"라면, L2는 "뭘 하자 + 어떻게/왜/좋지?"
+
+  ### ✅ L1 → L2 확장 패턴
+  - L1: "Dinner's almost ready." → L2: "Dinner's almost ready now." (시간 부사 추가)
+  - L1: "Can you set the spoons?" → L2: "Can you put the spoons out for me?" (구체적 방법 + 관계)
+  - L1: "We're leaving in ten minutes." → L2: "We're leaving in ten minutes, okay?" (확인 추가)
+
+  ### 아이 반응 (항상 2세트)
+
+  **1단어 제한 규칙**: 2개 반응 중 **최대 1개만 1단어 가능**. 나머지는 반드시 2단어 이상.
+
+  **2-3단어 chunk (핵심 패턴 — 73%)**
+  "All done!"  "So cold!"  "My turn!"  "Like this?"
+  "This is mine!"  "One more time!"  "Help me, Mommy!"
+
+  **감탄형 1단어 (허용, 단 2세트 중 최대 1개 — 20%)**
+  "Yummy!"  "Pretty!"  "Ouch!"  "Promise!"  "Done!"
+
+  **조동사/want to 패턴 (조건부 허용 — ~7% 이내)**
+  "I can do it!"  "I want to try!"  "I'll try."  "I can!"
+  - 매우 기본적인 패턴만. 상황에 맞을 때만.
+
+  **❌ L2 아이 반응 비허용**
+  - 5단어 이상 의문문: "Can I put toys in?" → L3
+  - 확장된 want to: "I want to share this with you." → L3
+  - 둘 다 1단어: "Yummy!" + "Done!" → 피하기 (최소 하나는 2단어+)
+
+  ---
+
+  ## 레벨 3 (4-6세) — "상황 묘사·이유·조건이 풍부해진 것"
+
+  ### 엄마 문장 규칙
+  - **정보 밀도**: 이유, 상황 묘사, 조건, 감정의 깊이가 추가
+  - **핵심: 어휘가 어려워지는 것이 아니라, 문장 구조·길이·표현의 층위가 풍부해지는 것**
+
+  ### ✅ L2 → L3 확장 패턴
+  - L2: "Dinner's almost ready now." → L3: "Dinner's almost ready, sweetie—just a few more minutes!" (애칭 + 구체적 시간)
+  - L2: "We're leaving in ten minutes, okay?" → L3: "We're heading out in ten minutes, so let's start getting ready." (이유 + 행동 유도)
+
+  ### 아이 반응 (항상 2세트)
+  - 문법적으로 완전한 문장. 주어+동사 형태.
+  - 조동사(can, will), to부정사(want to), 의문문(Can we~?) 자유.
+
+  **L3 아이 반응 패턴**
+  - 3-4단어 (58%): "My coat is right here!" "I'll stay still."
+  - 5-6단어 (30%): "Did you sleep well, Mommy?" "I want to read this one!"
+  - 핵심: "아이가 실제로 하는 말"이 아니라 "이 나이에 가르쳐야 하는 문법적으로 완전한 미니 문장"
+
+  ---
 
   ## 한국어 대응 규칙
   - 영어를 직역하는 것이 아니라, "한국 엄마가 같은 상황에서 실제로 말할 법한 자연스러운 톤."
-  - 한국어도 레벨에 따라 자연스럽게 확장:
-    - 레벨1: "아침 먹으러 가자 🥰" (짧고 직접적)
-    - 레벨2: "자, 아침 먹으러 가자 🥰" ("자," 추가로 부드러움)
-    - 레벨3: "이제 부엌으로 가서 아침 먹자 🥰" (구체적 장소+설명)
+  - 정보 층위도 레벨에 맞게 확장:
+    - L1: "아침 먹으러 가자" (행동 하나)
+    - L2: "자, 아침 먹으러 가자" (부드러운 시작어 추가)
+    - L3: "이제 부엌으로 가서 아침 먹자" (구체적 장소+동선)
+
+  ---
 
   ## A/B/C 3안 생성 규칙
   - 모든 안은 동일한 설계도(Step 2 출력)를 따릅니다.

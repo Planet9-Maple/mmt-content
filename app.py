@@ -281,13 +281,13 @@ def init_session_state():
         "planned_topics": default_topics,  # [{date, day, topic, status: planned/in_progress/completed}]
 
         # 콘텐츠 생성 (현재 작업 중인 주제)
+        # 새 흐름: 0(시작) → 1(구조검토) → 2(콘텐츠+AI검수 검토) → 3(최종확정)
         "current_topic_idx": None,
-        "gen_step": 0,  # 0: 시작, 1: 구조검토, 2: 생성검토, 3: 검수검토, 4: 최종확정
+        "gen_step": 0,  # 0: 시작, 1: 구조검토, 2: 콘텐츠+AI검수검토, 3: 최종확정
         "step2_result": None,  # 구조 설계 결과
         "step2_feedback": "",
         "step3_result": None,  # 문장 생성 결과
-        "step3_feedback": "",
-        "step4_result": None,  # 검수 결과
+        "step4_result": None,  # AI 검수 결과 (영문 생성 직후 자동 실행)
         "selected_variants": {"level_1": "A", "level_2": "A", "level_3": "A"},
 
         # 기타
@@ -308,7 +308,7 @@ def main():
     st.markdown("""
     <div style="background: linear-gradient(90deg, #4285F4 0%, #7C3AED 50%, #10A37F 100%);
                 padding: 8px 16px; border-radius: 8px; color: white; text-align: center; margin-bottom: 20px;">
-        🔵 Gemini (분석) → 🟣 Claude (생성) → 🟢 GPT (검수)
+        🔵 Gemini (주제) → 🟣 Claude (구조/생성) → 🟢 GPT (검수) → 👩‍💻 관리자 검토
     </div>
     """, unsafe_allow_html=True)
 
@@ -816,14 +816,15 @@ def render_generating_view():
     target_date = topic_data["date"]
 
     # 진행 상황 표시
-    steps = ["시작", "구조 검토", "생성 검토", "검수 검토", "최종 확정"]
+    # 새 흐름: 시작 → 구조 검토 → 콘텐츠 + AI 검수 검토 → 최종 확정
+    steps = ["시작", "구조 검토", "콘텐츠 검토", "최종 확정"]
     current_step = st.session_state.gen_step
 
     st.markdown(f"### 📝 {topic}")
     st.caption(f"발송일: {target_date} ({topic_data['day']})")
 
     # 스텝 프로그레스
-    cols = st.columns(5)
+    cols = st.columns(4)
     for i, step_name in enumerate(steps):
         with cols[i]:
             if i < current_step:
@@ -841,11 +842,9 @@ def render_generating_view():
     elif current_step == 1:
         render_gen_step1_structure_review()
     elif current_step == 2:
-        render_gen_step2_content_review()
+        render_gen_step2_content_with_review()  # 콘텐츠 + AI 검수 통합
     elif current_step == 3:
-        render_gen_step3_review_check()
-    elif current_step == 4:
-        render_gen_step4_final()
+        render_gen_step3_final()  # 최종 확정
 
 
 def render_gen_step0_start(topic: str, target_date: str):
@@ -1015,58 +1014,159 @@ def render_gen_step1_structure_review():
                     st.error(f"재생성 실패: {e}")
 
     with col3:
-        if st.button("✅ 승인 → 영어 생성", type="primary", use_container_width=True):
+        if st.button("✅ 승인 → 영어 생성 + AI 검수", type="primary", use_container_width=True):
+            # Step 1: 영어 생성
             with st.spinner("🟣 Claude가 영어 문장을 생성하고 있어요..."):
                 try:
                     category = db_loader.categorize_topic(topic)
-                    result = pipeline.step3_generate(st.session_state.step2_result, category=category)
-                    st.session_state.step3_result = result
+                    gen_result = pipeline.step3_generate(st.session_state.step2_result, category=category)
+                    st.session_state.step3_result = gen_result
+                except Exception as e:
+                    st.error(f"영어 생성 실패: {e}")
+                    return
+
+            # Step 2: AI 검수 (자동 실행)
+            with st.spinner("🟢 GPT가 품질을 검수하고 있어요..."):
+                try:
+                    review_result = pipeline.step4_review(gen_result, category=category)
+                    st.session_state.step4_result = review_result
+
+                    # GPT 추천안으로 기본 선택 설정
+                    best_combo = review_result.get("overall_recommendation", {}).get("best_combination", {})
+                    for level_key in ["level_1", "level_2", "level_3"]:
+                        if level_key in best_combo:
+                            st.session_state.selected_variants[level_key] = best_combo[level_key]
+
                     st.session_state.gen_step = 2
                     st.rerun()
                 except Exception as e:
-                    st.error(f"영어 생성 실패: {e}")
+                    st.error(f"AI 검수 실패: {e}")
 
 
-def render_gen_step2_content_review():
-    """Step 2: 생성된 콘텐츠 검토 - 레벨별/문장별 타겟 피드백 지원."""
-    st.subheader("📝 영어 콘텐츠 검토")
+def render_gen_step2_content_with_review():
+    """Step 2: 영어 콘텐츠 + AI 검수 결과 통합 검토.
 
-    result = st.session_state.step3_result
-    if not result:
+    새 흐름: 영문 생성 → AI 검수 (자동) → 관리자 검토 → 피드백 시 재생성+재검수 루프
+    """
+    st.subheader("📝 콘텐츠 검토 (AI 검수 완료)")
+
+    gen_result = st.session_state.step3_result
+    review_result = st.session_state.step4_result
+
+    if not gen_result:
         st.error("생성 결과가 없습니다.")
         return
 
-    levels = result.get("levels", {})
+    if not review_result:
+        st.warning("AI 검수 결과가 없습니다. 검수를 실행합니다...")
+        # 검수 자동 실행
+        with st.spinner("🟢 GPT가 품질을 검수하고 있어요..."):
+            try:
+                topic_data = st.session_state.planned_topics[st.session_state.current_topic_idx]
+                category = db_loader.categorize_topic(topic_data["topic"])
+                review_result = pipeline.step4_review(gen_result, category=category)
+                st.session_state.step4_result = review_result
+                st.rerun()
+            except Exception as e:
+                st.error(f"AI 검수 실패: {e}")
+                return
+
+    levels = gen_result.get("levels", {})
     topic_data = st.session_state.planned_topics[st.session_state.current_topic_idx]
     category = db_loader.categorize_topic(topic_data["topic"])
 
-    # 레벨별 A/B/C 변형 표시 + 개별 피드백
+    # AI 검수 요약 (상단에 표시)
+    overall = review_result.get("overall_recommendation", {})
+    confidence = overall.get("confidence", "unknown")
+    conf_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(confidence, "⚪")
+
+    col_summary1, col_summary2 = st.columns([2, 3])
+    with col_summary1:
+        st.markdown(f"### {conf_emoji} AI 검수: {confidence.upper()}")
+    with col_summary2:
+        if overall.get("human_review_focus"):
+            st.info(f"💡 검토 포인트: {overall.get('human_review_focus')}")
+
+    st.divider()
+
+    # 레벨별 콘텐츠 + AI 검수 점수 표시
     level_tabs = st.tabs(["Level 1 (2-3세)", "Level 2 (3-5세)", "Level 3 (4-6세)"])
     level_names = {"level_1": "Level 1", "level_2": "Level 2", "level_3": "Level 3"}
+
+    review_data = review_result.get("review", {})
 
     for level_key, tab in zip(["level_1", "level_2", "level_3"], level_tabs):
         with tab:
             level_data = levels.get(level_key, {})
             variants = level_data.get("variants", {})
+            level_review = review_data.get(level_key, {})
+            variants_review = level_review.get("variants", {})
+
+            # GPT 추천안 표시
+            best_pick = level_review.get("best_pick", "A")
+            best_reason = level_review.get("best_pick_reason", "")
+
+            st.caption(f"🏆 GPT 추천: **{best_pick}안** - {best_reason}")
 
             # A/B/C 선택
+            current_selected = st.session_state.selected_variants.get(level_key, "A")
             selected = st.radio(
                 "변형 선택",
                 ["A", "B", "C"],
                 horizontal=True,
                 key=f"var_select_{level_key}",
-                index=["A", "B", "C"].index(st.session_state.selected_variants.get(level_key, "A"))
+                index=["A", "B", "C"].index(current_selected)
             )
             st.session_state.selected_variants[level_key] = selected
 
-            # 선택된 변형 표시
+            # 선택된 변형 + 점수 표시
             var_data = variants.get(selected, {})
             admin_text = var_data.get("admin_text", "(없음)")
+
+            # 점수 정보
+            var_review = variants_review.get(selected, {})
+            total_score = var_review.get("total", 0)
+            max_score = var_review.get("max_possible", 60)
+            verdict = var_review.get("verdict", "?")
+            verdict_emoji = {"pass": "✅", "revise": "⚠️", "reject": "❌"}.get(verdict, "❓")
+
+            st.markdown(f"**점수: {total_score}/{max_score}** {verdict_emoji} ({verdict})")
+
+            # 콘텐츠 표시
             st.code(admin_text, language=None)
+
+            # 이슈 표시 (있으면)
+            issues = var_review.get("issues", [])
+            if issues:
+                with st.expander(f"⚠️ 검수 이슈 ({len(issues)}개)", expanded=False):
+                    for issue in issues:
+                        if isinstance(issue, dict):
+                            severity = issue.get("severity", "minor")
+                            desc = issue.get("description", str(issue))
+                            sev_emoji = {"critical": "🔴", "major": "🟠", "minor": "🟡"}.get(severity, "⚪")
+                            st.write(f"{sev_emoji} [{severity}] {desc}")
+                        else:
+                            st.write(f"• {issue}")
+
+            # 점수 상세 (접기)
+            scores = var_review.get("scores", {})
+            if scores:
+                with st.expander("📊 점수 상세", expanded=False):
+                    score_names = {
+                        "naturalness": "원어민 자연스러움",
+                        "grammar": "문법 완전성",
+                        "info_density": "정보 밀도 준수",
+                        "level_differentiation": "레벨 간 차별성",
+                        "flow": "문장 흐름",
+                        "korean_match": "한국어 대응"
+                    }
+                    for key, name in score_names.items():
+                        score = scores.get(key, "-")
+                        st.write(f"• {name}: {score}/10")
 
             # ===== 레벨별 피드백 섹션 =====
             st.markdown("---")
-            st.markdown(f"##### 💬 {level_names[level_key]} 피드백")
+            st.markdown(f"##### 💬 {level_names[level_key]} 피드백 (재생성 시 AI 재검수 자동 실행)")
 
             # 문장 선택 체크박스
             st.caption("수정할 문장 선택:")
@@ -1089,9 +1189,9 @@ def render_gen_step2_content_review():
                 label_visibility="collapsed"
             )
 
-            # 이 레벨만 재생성 버튼
+            # 이 레벨만 재생성 + 재검수 버튼
             if st.button(
-                f"🔄 {level_names[level_key]}만 재생성",
+                f"🔄 {level_names[level_key]} 재생성 + 재검수",
                 key=f"regen_{level_key}",
                 disabled=not level_feedback.strip(),
                 use_container_width=True
@@ -1111,9 +1211,10 @@ def render_gen_step2_content_review():
                 if not target_sentences:
                     st.warning("⚠️ 수정할 문장을 선택하세요.")
                 else:
+                    # 1. 재생성
                     with st.spinner(f"🟣 {level_names[level_key]} 재생성 중... (문장 {target_sentences})"):
                         try:
-                            new_result = pipeline.step3_regenerate_targeted(
+                            new_gen_result = pipeline.step3_regenerate_targeted(
                                 structure=st.session_state.step2_result,
                                 existing_result=st.session_state.step3_result,
                                 target_level=level_key,
@@ -1122,11 +1223,20 @@ def render_gen_step2_content_review():
                                 preserve_variant=selected,
                                 category=category
                             )
-                            st.session_state.step3_result = new_result
-                            st.success(f"✅ {level_names[level_key]} 재생성 완료!")
-                            st.rerun()
+                            st.session_state.step3_result = new_gen_result
                         except Exception as e:
                             st.error(f"재생성 실패: {e}")
+                            return
+
+                    # 2. 재검수 (자동)
+                    with st.spinner(f"🟢 GPT가 재검수하고 있어요..."):
+                        try:
+                            new_review_result = pipeline.step4_review(new_gen_result, category=category)
+                            st.session_state.step4_result = new_review_result
+                            st.success(f"✅ {level_names[level_key]} 재생성 + 재검수 완료!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"재검수 실패: {e}")
 
     st.divider()
 
@@ -1141,113 +1251,38 @@ def render_gen_step2_content_review():
             st.rerun()
 
     with col2:
-        # 전체 재생성 (기존 방식)
-        global_feedback = st.session_state.get("global_feedback", "")
-        if st.button("🔄 전체 재생성", use_container_width=True, help="모든 레벨을 처음부터 재생성"):
+        # 전체 재생성 + 재검수
+        if st.button("🔄 전체 재생성 + 재검수", use_container_width=True, help="모든 레벨을 처음부터 재생성 후 재검수"):
+            # 1. 전체 재생성
             with st.spinner("🟣 Claude가 전체 재생성 중..."):
                 try:
-                    result = pipeline.step3_generate(
+                    new_gen_result = pipeline.step3_generate(
                         st.session_state.step2_result,
                         category=category
                     )
-                    st.session_state.step3_result = result
-                    st.rerun()
+                    st.session_state.step3_result = new_gen_result
                 except Exception as e:
                     st.error(f"재생성 실패: {e}")
+                    return
 
-    with col3:
-        if st.button("✅ 승인 → GPT 검수", type="primary", use_container_width=True):
-            with st.spinner("🟢 GPT가 품질을 검수하고 있어요..."):
+            # 2. 전체 재검수
+            with st.spinner("🟢 GPT가 재검수하고 있어요..."):
                 try:
-                    result = pipeline.step4_review(st.session_state.step3_result, category=category)
-                    st.session_state.step4_result = result
-                    st.session_state.gen_step = 3
+                    new_review_result = pipeline.step4_review(new_gen_result, category=category)
+                    st.session_state.step4_result = new_review_result
+                    st.success("✅ 전체 재생성 + 재검수 완료!")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"검수 실패: {e}")
-
-
-def render_gen_step3_review_check():
-    """Step 3: GPT 검수 결과 확인."""
-    st.subheader("🔍 GPT 검수 결과")
-
-    result = st.session_state.step4_result
-    if not result:
-        st.error("검수 결과가 없습니다.")
-        return
-
-    overall = result.get("overall_recommendation", {})
-    best_combo = overall.get("best_combination", {})
-    confidence = overall.get("confidence", "unknown")
-
-    # 신뢰도 표시
-    conf_emoji = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(confidence, "⚪")
-    st.markdown(f"### {conf_emoji} 신뢰도: {confidence.upper()}")
-
-    if overall.get("human_review_focus"):
-        st.warning(f"💡 검토 포인트: {overall.get('human_review_focus')}")
-
-    # GPT 추천 vs 내 선택 비교
-    st.subheader("📊 변형 선택")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown("**Level 1**")
-        gpt_pick = best_combo.get("level_1", "A")
-        my_pick = st.session_state.selected_variants.get("level_1", "A")
-        st.write(f"GPT 추천: {gpt_pick}안")
-        new_pick = st.radio("선택", ["A", "B", "C"], index=["A", "B", "C"].index(my_pick), key="final_l1", horizontal=True)
-        st.session_state.selected_variants["level_1"] = new_pick
-
-    with col2:
-        st.markdown("**Level 2**")
-        gpt_pick = best_combo.get("level_2", "A")
-        my_pick = st.session_state.selected_variants.get("level_2", "A")
-        st.write(f"GPT 추천: {gpt_pick}안")
-        new_pick = st.radio("선택", ["A", "B", "C"], index=["A", "B", "C"].index(my_pick), key="final_l2", horizontal=True)
-        st.session_state.selected_variants["level_2"] = new_pick
+                    st.error(f"재검수 실패: {e}")
 
     with col3:
-        st.markdown("**Level 3**")
-        gpt_pick = best_combo.get("level_3", "A")
-        my_pick = st.session_state.selected_variants.get("level_3", "A")
-        st.write(f"GPT 추천: {gpt_pick}안")
-        new_pick = st.radio("선택", ["A", "B", "C"], index=["A", "B", "C"].index(my_pick), key="final_l3", horizontal=True)
-        st.session_state.selected_variants["level_3"] = new_pick
-
-    # 레벨별 점수 상세
-    with st.expander("📈 점수 상세"):
-        review = result.get("review", {})
-        for level_key in ["level_1", "level_2", "level_3"]:
-            level_review = review.get(level_key, {})
-            variants_review = level_review.get("variants", {})
-
-            st.markdown(f"**{level_key.upper()}**")
-            for var_key in ["A", "B", "C"]:
-                var_review = variants_review.get(var_key, {})
-                total = var_review.get("total", 0)
-                max_score = var_review.get("max_possible", 60)  # 6개 항목 × 10점
-                verdict = var_review.get("verdict", "?")
-                st.write(f"  {var_key}안: {total}/{max_score} ({verdict})")
-
-    st.divider()
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("← 콘텐츠 수정"):
-            st.session_state.gen_step = 2
-            st.rerun()
-
-    with col2:
-        if st.button("✅ 최종 확정으로", type="primary"):
-            st.session_state.gen_step = 4
+        if st.button("✅ 승인 → 최종 확정", type="primary", use_container_width=True):
+            st.session_state.gen_step = 3
             st.rerun()
 
 
-def render_gen_step4_final():
-    """Step 4: 최종 확정."""
+def render_gen_step3_final():
+    """Step 3: 최종 확정 - 선택된 콘텐츠 확인 및 Google Sheets 저장."""
     st.subheader("🎉 최종 확정")
 
     topic_data = st.session_state.planned_topics[st.session_state.current_topic_idx]
@@ -1277,8 +1312,8 @@ def render_gen_step4_final():
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("← 검수 결과로"):
-            st.session_state.gen_step = 3
+        if st.button("← 콘텐츠 검토로"):
+            st.session_state.gen_step = 2
             st.rerun()
 
     with col2:
@@ -1344,7 +1379,6 @@ def reset_generation_state():
     st.session_state.step2_result = None
     st.session_state.step2_feedback = ""
     st.session_state.step3_result = None
-    st.session_state.step3_feedback = ""
     st.session_state.step4_result = None
     st.session_state.selected_variants = {"level_1": "A", "level_2": "A", "level_3": "A"}
 

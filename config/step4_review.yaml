@@ -47,7 +47,29 @@ system_prompt: |
     - 단일 문장: 5-8단어 (평균 6.3단어)
     - 3문장 합계: 16-24단어 (평균 19단어)
     - ⚠️ **3문장 합계 14단어 이하 = 너무 짧음 (3점 이하)**
-    - ⚠️ **"Good job! Yay! Done!" 식의 단어장 느낌 = 감점**
+
+  - **🚫 L1 구두점 다양성 체크 (must_fix 이슈)**:
+
+    **DB 실제 L1 구두점 비율**: 마침표 37.7% / 물음표 37.7% / 느낌표 24.7%
+
+    **필수 규칙 위반 = must_fix**:
+    1. **3문장 전부 느낌표(!) = must_fix**
+       - ❌ "Look! It's a balloon! Up it goes! So high!" → 단어장/광고 느낌
+       - 수정안: 최소 1문장은 물음표(?) 또는 마침표(.)로 변경
+
+    2. **질문(?) 0개 = must_fix** (DB의 38%가 질문)
+       - ❌ "Come here! Let's go! All done!" → 일방적 지시만
+       - 수정안: "Which one do you want?", "Did you sleep well?" 등 질문 포함
+
+    3. **단어장 느낌 = must_fix**
+       - ❌ "Good job! Yay! Done!" 식의 감탄사만 나열
+       - ❌ 3문장 전부 3단어 이하의 짧은 파편
+       - 수정안: 실제 대화처럼 의미 있는 문장으로 변경
+
+    **✅ 좋은 L1 구두점 패턴 (DB 기반)**:
+    - "Good morning! Did you sleep well?" (! + ?)
+    - "Where does this go? Over here. Good job!" (? + . + !)
+    - "You want it again? Okay, one more time." (? + .)
 
   ### 4. L2 정보 밀도 준수
   - L1의 핵심 행동이 유지되면서, 감정/확인/구체적 방법이 1-2개 추가되었는가?
@@ -181,12 +203,23 @@ system_prompt: |
 
   ## must_fix 형식 (issues와 별도로 반드시 수정해야 할 항목)
   must_fix 배열에는 다음 형식으로 구체적 수정 지시를 포함:
+
+  **L3 예시 (추상적 어휘):**
   {
     "sentence_num": 1,
     "problem": "추상적 어휘 'independent' 사용",
     "original": "that makes you really independent",
     "fix_instruction": "'That's so cool!' 또는 'Amazing!'으로 대체",
     "suggested_fix": "That's so cool!"
+  }
+
+  **L1 예시 (구두점 다양성 위반):**
+  {
+    "sentence_num": 0,
+    "problem": "L1 3문장 전부 느낌표(!) + 질문 0개 - 단어장 느낌",
+    "original": "Look! It's a balloon! Up it goes! So high! Catch it! Here it comes!",
+    "fix_instruction": "최소 1개 질문(?) 포함 필수. 느낌표 최대 2개. 실제 대화처럼 구성.",
+    "suggested_fix": "Look, a balloon! Up it goes. Can you catch it?"
   }
 
   ## verdict 기준
@@ -199,6 +232,6 @@ system_prompt: |
   - 이 경우 시스템이 자동으로 must_fix 피드백을 반영해 재생성함
 
   ## severity 기준
-  - "critical": 문법 오류, 레벨 정보 밀도 완전 위반, 부적절한 표현, **L3 부자연스러운 종속절 패턴 (since/now that/because)**
+  - "critical": 문법 오류, 레벨 정보 밀도 완전 위반, 부적절한 표현, **L3 부자연스러운 종속절 패턴 (since/now that/because)**, **L1 3문장 전부 느낌표(!)**,  **L1 질문(?) 0개**, **L1 단어장 느낌 (감탄사만 나열)**
   - "major": 번역투, 레벨 간 차별성 부족, L2 아이 반응 규칙 위반, 어색한 진행형 칭찬
   - "minor": 톤 미세 조정, 약간 어색한 흐름

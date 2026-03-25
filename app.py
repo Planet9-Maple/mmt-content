@@ -1382,6 +1382,9 @@ def render_gen_step3_final():
                         st.session_state.save_completed = True
                         st.session_state.save_result = result
 
+                        # 콘텐츠 관리 페이지 캐시 클리어 (새 콘텐츠 반영)
+                        st.session_state.sheets_contents = []
+
                         # 월간 기획 자동 저장 (완료 상태 반영)
                         target_month = datetime.strptime(target_date, "%Y-%m-%d").replace(day=1)
                         save_result = save_monthly_plan(target_month, st.session_state.planned_topics)

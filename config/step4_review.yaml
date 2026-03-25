@@ -43,33 +43,55 @@ system_prompt: |
   - 이유 설명(because, so that)이 없는가?
   - 아이 반응이 "⭐ {아이이름}: 생략"으로 되어 있는가?
   - 접속사(and, but)는 허용 — 단, 두 절이 같은 정보의 연장선이어야 함
-  - **단어 수 체크 (DB 기준)**:
-    - 단일 문장: 5-8단어 (평균 6.3단어)
-    - 3문장 합계: 16-24단어 (평균 19단어)
-    - ⚠️ **3문장 합계 14단어 이하 = 너무 짧음 (3점 이하)**
+
+  - **🔢 L1 단어 수 체크 (DB 304문장 기준 - must_fix 대상)**:
+
+    **개별 문장 단어 수:**
+    | 범위 | DB 비율 | 판정 |
+    |------|---------|------|
+    | 1-2단어 | 3.6% | ❌ **must_fix** |
+    | 3단어 | 8% | ⚠️ 연속 2개 시 must_fix |
+    | **4-7단어** | **67%** | ✅ 이상적 |
+    | 8-9단어 | 7% | ✅ 허용 |
+
+    **3문장 합계 단어 수:**
+    | 범위 | DB 비율 | 판정 |
+    |------|---------|------|
+    | 12단어 미만 | 0% | ❌ **must_fix (절대 금지)** |
+    | 12-14단어 | 10% | ⚠️ 최소한 |
+    | **15-20단어** | **65%** | ✅ 이상적 (목표) |
+    | 21-24단어 | 20% | ✅ 허용 |
+
+    **must_fix 발동 조건:**
+    1. **1-2단어 문장 1개라도 있으면 = must_fix**
+       - ❌ "Look!" (1w), "No!" (1w), "So high!" (2w)
+       - 수정안: 최소 3단어 이상으로 확장
+
+    2. **3단어 이하 문장이 2개 연속 = must_fix**
+       - ❌ "Look! It's big! Touch it!" (1w + 2w + 2w)
+       - 수정안: 최소 1문장은 4단어 이상
+
+    3. **3문장 합계 12단어 미만 = must_fix**
+       - ❌ "Look! It's a balloon! Up it goes!" = 7단어 → DB 최소보다 42% 부족
+       - 수정안: 15-20단어 목표로 재작성
 
   - **🚫 L1 구두점 다양성 체크 (must_fix 이슈)**:
 
     **DB 실제 L1 구두점 비율**: 마침표 37.7% / 물음표 37.7% / 느낌표 24.7%
 
-    **필수 규칙 위반 = must_fix**:
+    **must_fix 발동 조건:**
     1. **3문장 전부 느낌표(!) = must_fix**
-       - ❌ "Look! It's a balloon! Up it goes! So high!" → 단어장/광고 느낌
+       - ❌ "Look! It's a balloon! Up it goes!" → 단어장/광고 느낌
        - 수정안: 최소 1문장은 물음표(?) 또는 마침표(.)로 변경
 
     2. **질문(?) 0개 = must_fix** (DB의 38%가 질문)
        - ❌ "Come here! Let's go! All done!" → 일방적 지시만
        - 수정안: "Which one do you want?", "Did you sleep well?" 등 질문 포함
 
-    3. **단어장 느낌 = must_fix**
-       - ❌ "Good job! Yay! Done!" 식의 감탄사만 나열
-       - ❌ 3문장 전부 3단어 이하의 짧은 파편
-       - 수정안: 실제 대화처럼 의미 있는 문장으로 변경
-
-    **✅ 좋은 L1 구두점 패턴 (DB 기반)**:
-    - "Good morning! Did you sleep well?" (! + ?)
-    - "Where does this go? Over here. Good job!" (? + . + !)
-    - "You want it again? Okay, one more time." (? + .)
+    **✅ 좋은 L1 패턴 (DB 기반)**:
+    - "Good morning! Did you sleep well?" (3w + 4w = 7w, ! + ?)
+    - "Let's play hide-and-seek. Ready or not, here I come!" (4w + 6w = 10w, . + !)
+    - "Where does this go? Over here. Good job!" (4w + 2w + 2w = 8w, ? + . + !)
 
   ### 4. L2 정보 밀도 준수
   - L1의 핵심 행동이 유지되면서, 감정/확인/구체적 방법이 1-2개 추가되었는가?
@@ -213,13 +235,22 @@ system_prompt: |
     "suggested_fix": "That's so cool!"
   }
 
+  **L1 예시 (단어 수 부족 - 가장 흔한 문제):**
+  {
+    "sentence_num": 0,
+    "problem": "L1 3문장 합계 7단어 - DB 최소(12단어)보다 42% 부족. 1-2단어 문장 포함.",
+    "original": "Look! It's a balloon! Up it goes!",
+    "fix_instruction": "3문장 합계 15-20단어 목표. 개별 문장 최소 3단어, 이상적으로 4-7단어.",
+    "suggested_fix": "Let's blow up a balloon. Ta-da! It's so big. Want to touch it?"
+  }
+
   **L1 예시 (구두점 다양성 위반):**
   {
     "sentence_num": 0,
-    "problem": "L1 3문장 전부 느낌표(!) + 질문 0개 - 단어장 느낌",
-    "original": "Look! It's a balloon! Up it goes! So high! Catch it! Here it comes!",
-    "fix_instruction": "최소 1개 질문(?) 포함 필수. 느낌표 최대 2개. 실제 대화처럼 구성.",
-    "suggested_fix": "Look, a balloon! Up it goes. Can you catch it?"
+    "problem": "L1 3문장 전부 느낌표(!) + 질문 0개",
+    "original": "Come here! Let's go! All done!",
+    "fix_instruction": "최소 1개 질문(?) 포함 필수. 느낌표 최대 2개.",
+    "suggested_fix": "Come here, sweetie. Where are your shoes? Let's put them on."
   }
 
   ## verdict 기준
@@ -232,6 +263,6 @@ system_prompt: |
   - 이 경우 시스템이 자동으로 must_fix 피드백을 반영해 재생성함
 
   ## severity 기준
-  - "critical": 문법 오류, 레벨 정보 밀도 완전 위반, 부적절한 표현, **L3 부자연스러운 종속절 패턴 (since/now that/because)**, **L1 3문장 전부 느낌표(!)**,  **L1 질문(?) 0개**, **L1 단어장 느낌 (감탄사만 나열)**
-  - "major": 번역투, 레벨 간 차별성 부족, L2 아이 반응 규칙 위반, 어색한 진행형 칭찬
+  - "critical": 문법 오류, 레벨 정보 밀도 완전 위반, 부적절한 표현, **L3 부자연스러운 종속절 패턴 (since/now that/because)**, **L1 1-2단어 문장**, **L1 3문장 합계 12단어 미만**, **L1 3문장 전부 느낌표(!)**, **L1 질문(?) 0개**
+  - "major": 번역투, 레벨 간 차별성 부족, L2 아이 반응 규칙 위반, 어색한 진행형 칭찬, L1 3문장 합계 15단어 미만
   - "minor": 톤 미세 조정, 약간 어색한 흐름

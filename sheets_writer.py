@@ -211,7 +211,8 @@ def get_all_contents(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB
 
         return contents
     except Exception as e:
-        return []
+        print(f"get_all_contents 에러: {e}")
+        raise  # 에러를 상위로 전파해서 UI에서 표시
 
 
 def delete_content(row_number: int, spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> dict:

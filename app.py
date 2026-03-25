@@ -1478,16 +1478,26 @@ def render_management_view():
     if not st.session_state.sheets_contents:
         with st.spinner("Google Sheets에서 콘텐츠 로딩 중..."):
             try:
+                # 디버그: 스프레드시트 정보 표시
+                spreadsheet = sheets_writer.get_or_create_spreadsheet()
+                worksheet = spreadsheet.sheet1
+                all_values = worksheet.get_all_values()
+                st.write(f"🔍 스프레드시트: {spreadsheet.title}")
+                st.write(f"🔍 시트: {worksheet.title}, 총 {len(all_values)}행")
+
                 contents = sheets_writer.get_all_contents()
+                st.write(f"🔍 로드된 콘텐츠: {len(contents)}건")
                 st.session_state.sheets_contents = contents
             except Exception as e:
+                import traceback
                 st.error(f"콘텐츠 로드 실패: {e}")
+                st.code(traceback.format_exc())
                 return
 
     contents = st.session_state.sheets_contents
 
     if not contents:
-        st.info("저장된 콘텐츠가 없습니다.")
+        st.info("저장된 콘텐츠가 없습니다. (시트에 헤더만 있거나 데이터가 없음)")
         return
 
     # 날짜 필터

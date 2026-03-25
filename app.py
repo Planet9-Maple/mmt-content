@@ -42,7 +42,11 @@ def init_session_state():
         "suggestions": [],
         "selected_topic": "",
         "pipeline_result": None,
-        "is_generating": False
+        "is_generating": False,
+        "app_mode": "create",  # "create" or "manage"
+        "sheets_contents": [],
+        "regenerate_date": None,
+        "regenerate_topic": None
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -63,8 +67,19 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # 사이드바: DB 정보
+    # 사이드바
     with st.sidebar:
+        # 모드 선택
+        st.header("📌 메뉴")
+        mode = st.radio(
+            "작업 선택",
+            ["✨ 새 콘텐츠 생성", "📋 콘텐츠 관리"],
+            label_visibility="collapsed"
+        )
+        st.session_state.app_mode = "create" if "생성" in mode else "manage"
+
+        st.divider()
+
         st.header("📊 DB 현황")
         try:
             df = db_loader.load_db()
@@ -88,7 +103,9 @@ def main():
         st.text("Step 4: GPT")
 
     # 메인 영역
-    if st.session_state.step == 0:
+    if st.session_state.app_mode == "manage":
+        render_content_management()
+    elif st.session_state.step == 0:
         render_step0_input()
     elif st.session_state.step == 1:
         render_step1_topic_select()
@@ -488,6 +505,122 @@ def generate_admin_text(result: dict) -> str:
         text += var_data.get("admin_text", "(생성 실패)") + "\n\n"
 
     return text
+
+
+def render_content_management():
+    """콘텐츠 관리 화면."""
+    st.header("📋 콘텐츠 관리")
+
+    try:
+        import sheets_writer
+    except ImportError:
+        st.error("sheets_writer 모듈을 불러올 수 없습니다.")
+        return
+
+    # 새로고침 버튼
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 새로고침"):
+            st.session_state.sheets_contents = []
+            st.rerun()
+
+    # 콘텐츠 로드
+    if not st.session_state.sheets_contents:
+        with st.spinner("Google Sheets에서 콘텐츠 로딩 중..."):
+            try:
+                contents = sheets_writer.get_all_contents()
+                st.session_state.sheets_contents = contents
+            except Exception as e:
+                st.error(f"콘텐츠 로드 실패: {e}")
+                return
+
+    contents = st.session_state.sheets_contents
+
+    if not contents:
+        st.info("저장된 콘텐츠가 없습니다.")
+        return
+
+    # 날짜 필터
+    dates = sorted(set(c.get("date", "") for c in contents if c.get("date")), reverse=True)
+
+    if dates:
+        selected_date = st.selectbox(
+            "날짜 선택",
+            ["전체"] + dates,
+            format_func=lambda x: x if x == "전체" else f"{x} ({sum(1 for c in contents if c.get('date') == x)}건)"
+        )
+    else:
+        selected_date = "전체"
+
+    # 필터링
+    filtered = contents if selected_date == "전체" else [c for c in contents if c.get("date") == selected_date]
+
+    st.write(f"총 **{len(filtered)}건**의 콘텐츠")
+
+    # 콘텐츠 표시
+    for content in reversed(filtered):  # 최신순 표시
+        row_num = content.get("row_number", 0)
+        date = content.get("date", "-")
+        day = content.get("day", "-")
+        topic = content.get("situation", "-")
+        no = content.get("no", "-")
+
+        with st.expander(f"**{date}** ({day}) - {topic}  [No.{no}]"):
+            # 레벨별 콘텐츠 미리보기
+            tab1, tab2, tab3 = st.tabs(["Level 1", "Level 2", "Level 3"])
+
+            with tab1:
+                l1 = content.get("level1", "(없음)")
+                st.code(l1[:500] + "..." if len(l1) > 500 else l1, language=None)
+            with tab2:
+                l2 = content.get("level2", "(없음)")
+                st.code(l2[:500] + "..." if len(l2) > 500 else l2, language=None)
+            with tab3:
+                l3 = content.get("level3", "(없음)")
+                st.code(l3[:500] + "..." if len(l3) > 500 else l3, language=None)
+
+            # 액션 버튼
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if st.button("🔄 재생성", key=f"regen_{row_num}"):
+                    # 재생성 모드로 전환
+                    st.session_state.app_mode = "create"
+                    st.session_state.step = 0
+                    try:
+                        st.session_state.target_date = datetime.strptime(date, "%Y-%m-%d")
+                    except:
+                        st.session_state.target_date = datetime.now()
+                    st.session_state.selected_topic = topic
+                    st.session_state.regenerate_row = row_num
+                    st.rerun()
+
+            with col2:
+                pass  # 빈 공간
+
+            with col3:
+                if st.button("🗑️ 삭제", key=f"del_{row_num}", type="secondary"):
+                    st.session_state[f"confirm_delete_{row_num}"] = True
+                    st.rerun()
+
+            # 삭제 확인
+            if st.session_state.get(f"confirm_delete_{row_num}"):
+                st.warning(f"정말 이 콘텐츠를 삭제하시겠습니까? (No.{no}, {topic})")
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button("✅ 삭제 확인", key=f"confirm_yes_{row_num}"):
+                        result = sheets_writer.delete_content(row_num)
+                        if result['success']:
+                            st.success("삭제되었습니다.")
+                            st.session_state.sheets_contents = []
+                            del st.session_state[f"confirm_delete_{row_num}"]
+                            st.rerun()
+                        else:
+                            st.error(f"삭제 실패: {result['error']}")
+                with col_no:
+                    if st.button("❌ 취소", key=f"confirm_no_{row_num}"):
+                        del st.session_state[f"confirm_delete_{row_num}"]
+                        st.rerun()
 
 
 def generate_csv(result: dict) -> str:

@@ -168,6 +168,65 @@ def share_spreadsheet(email: str, spreadsheet_name: str = "마미톡잉글리시
         return False
 
 
+def get_all_contents(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> list:
+    """시트의 모든 콘텐츠를 가져옵니다."""
+    try:
+        spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
+        worksheet = spreadsheet.sheet1
+        all_values = worksheet.get_all_values()
+
+        if len(all_values) <= 1:
+            return []
+
+        headers = all_values[0]
+        contents = []
+        for i, row in enumerate(all_values[1:], start=2):  # 행 번호는 2부터
+            content = {
+                "row_number": i,
+                "no": row[0] if len(row) > 0 else "",
+                "date": row[1] if len(row) > 1 else "",
+                "day": row[2] if len(row) > 2 else "",
+                "situation": row[3] if len(row) > 3 else "",
+                "level1": row[4] if len(row) > 4 else "",
+                "level2": row[5] if len(row) > 5 else "",
+                "level3": row[6] if len(row) > 6 else "",
+                "mommyvoca": row[7] if len(row) > 7 else ""
+            }
+            contents.append(content)
+
+        return contents
+    except Exception as e:
+        return []
+
+
+def delete_content(row_number: int, spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> dict:
+    """특정 행의 콘텐츠를 삭제합니다."""
+    try:
+        spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
+        worksheet = spreadsheet.sheet1
+        worksheet.delete_rows(row_number)
+        return {'success': True, 'row': row_number}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def update_content(
+    row_number: int,
+    level1_text: str,
+    level2_text: str,
+    level3_text: str,
+    spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
+) -> dict:
+    """특정 행의 콘텐츠를 업데이트합니다."""
+    try:
+        spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
+        worksheet = spreadsheet.sheet1
+        worksheet.update(f'E{row_number}:G{row_number}', [[level1_text, level2_text, level3_text]])
+        return {'success': True, 'row': row_number}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
 # === 테스트용 ===
 if __name__ == "__main__":
     print("Google Sheets 연동 테스트")

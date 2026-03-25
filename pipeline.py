@@ -118,21 +118,29 @@ def call_gemini(
     response.raise_for_status()
 
     result = response.json()
-    text = result["candidates"][0]["content"]["parts"][0]["text"]
+
+    # Gemini 2.5는 thinking과 text를 분리해서 반환할 수 있음
+    parts = result["candidates"][0]["content"]["parts"]
+    text = ""
+    for part in parts:
+        if "text" in part:
+            text = part["text"]
+            break
 
     # 토큰 사용량 로깅
     if "usageMetadata" in result:
         usage = result["usageMetadata"]
         logger.info(f"토큰 사용: input={usage.get('promptTokenCount', 0)}, output={usage.get('candidatesTokenCount', 0)}")
 
+    # JSON 추출 (마크다운 코드블록 또는 직접 JSON)
+    text = text.strip()
+    if text.startswith("```"):
+        # ```json ... ``` 형태에서 JSON 추출
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+        if match:
+            text = match.group(1).strip()
+
     return text
-
-    # 토큰 사용량 로깅
-    if hasattr(response, 'usage_metadata'):
-        usage = response.usage_metadata
-        logger.info(f"토큰 사용: input={usage.prompt_token_count}, output={usage.candidates_token_count}")
-
-    return response.text
 
 
 def call_claude(

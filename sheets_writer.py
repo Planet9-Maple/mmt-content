@@ -24,32 +24,47 @@ COLUMNS = ["No.", "date", "day", "situation", "level1", "level2", "level3", "mom
 
 def get_credentials() -> Credentials:
     """서비스 계정 인증 정보를 가져옵니다."""
+    errors = []
+
     # 1. 환경 변수에서 JSON 문자열로 시도
     creds_json = os.getenv("GOOGLE_SHEETS_CREDENTIALS")
 
     if creds_json:
-        creds_dict = json.loads(creds_json)
-        return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        try:
+            creds_dict = json.loads(creds_json)
+            return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        except Exception as e:
+            errors.append(f"환경변수 파싱 실패: {e}")
 
     # 2. Streamlit secrets에서 시도
     try:
         import streamlit as st
         if hasattr(st, 'secrets') and 'GOOGLE_SHEETS_CREDENTIALS' in st.secrets:
-            creds_json = st.secrets['GOOGLE_SHEETS_CREDENTIALS']
-            if isinstance(creds_json, str):
-                creds_dict = json.loads(creds_json)
+            creds_data = st.secrets['GOOGLE_SHEETS_CREDENTIALS']
+            if isinstance(creds_data, str):
+                creds_dict = json.loads(creds_data)
             else:
-                creds_dict = dict(creds_json)
+                # Streamlit secrets에서 dict 또는 AttrDict로 올 수 있음
+                creds_dict = dict(creds_data)
             return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    except Exception:
-        pass
+        else:
+            errors.append("Streamlit secrets에 GOOGLE_SHEETS_CREDENTIALS 키 없음")
+    except json.JSONDecodeError as e:
+        errors.append(f"Streamlit secrets JSON 파싱 실패: {e}")
+    except Exception as e:
+        errors.append(f"Streamlit secrets 읽기 실패: {e}")
 
     # 3. 로컬 파일에서 시도
     local_path = os.path.join(os.path.dirname(__file__), "docs", "klarity-482204-b2cb4fe72848.json")
     if os.path.exists(local_path):
-        return Credentials.from_service_account_file(local_path, scopes=SCOPES)
+        try:
+            return Credentials.from_service_account_file(local_path, scopes=SCOPES)
+        except Exception as e:
+            errors.append(f"로컬 파일 로드 실패: {e}")
+    else:
+        errors.append(f"로컬 파일 없음: {local_path}")
 
-    raise ValueError("Google Sheets 인증 정보를 찾을 수 없습니다.")
+    raise ValueError(f"Google Sheets 인증 정보를 찾을 수 없습니다. 시도한 방법들: {'; '.join(errors)}")
 
 
 def get_client() -> gspread.Client:
@@ -225,6 +240,157 @@ def update_content(
         return {'success': True, 'row': row_number}
     except Exception as e:
         return {'success': False, 'error': str(e)}
+
+
+# ============================================================
+# 월간 기획 저장/로드 (Google Sheets 기반)
+# ============================================================
+
+PLANS_SHEET_NAME = "monthly_plans"
+PLANS_COLUMNS = ["month", "created_at", "topics_json"]
+
+
+def get_or_create_plans_worksheet(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"):
+    """월간 기획 시트를 가져오거나 생성합니다."""
+    spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
+
+    try:
+        worksheet = spreadsheet.worksheet(PLANS_SHEET_NAME)
+    except gspread.WorksheetNotFound:
+        # 새 시트 생성
+        worksheet = spreadsheet.add_worksheet(title=PLANS_SHEET_NAME, rows=100, cols=3)
+        worksheet.update('A1:C1', [PLANS_COLUMNS])
+        worksheet.format('A1:C1', {
+            'textFormat': {'bold': True},
+            'backgroundColor': {'red': 0.85, 'green': 0.92, 'blue': 1.0}
+        })
+
+    return worksheet
+
+
+def save_monthly_plan_to_sheets(
+    month: str,
+    topics: list,
+    spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
+) -> dict:
+    """월간 기획을 Google Sheets에 저장합니다.
+
+    Args:
+        month: 월 (YYYY-MM 형식)
+        topics: 주제 리스트
+        spreadsheet_name: 스프레드시트 이름
+
+    Returns:
+        {'success': True} or {'success': False, 'error': '...'}
+    """
+    try:
+        worksheet = get_or_create_plans_worksheet(spreadsheet_name)
+
+        # 기존 데이터 확인 (같은 월이 있으면 업데이트)
+        all_values = worksheet.get_all_values()
+
+        row_to_update = None
+        for i, row in enumerate(all_values[1:], start=2):  # 헤더 제외
+            if row and row[0] == month:
+                row_to_update = i
+                break
+
+        # 데이터 준비
+        created_at = datetime.now().isoformat()
+        topics_json = json.dumps(topics, ensure_ascii=False)
+
+        if row_to_update:
+            # 기존 행 업데이트
+            worksheet.update(f'A{row_to_update}:C{row_to_update}', [[month, created_at, topics_json]])
+        else:
+            # 새 행 추가
+            worksheet.append_row([month, created_at, topics_json], value_input_option='USER_ENTERED')
+
+        return {'success': True, 'month': month}
+
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def load_monthly_plan_from_sheets(
+    month: str,
+    spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
+) -> list:
+    """Google Sheets에서 월간 기획을 로드합니다.
+
+    Args:
+        month: 월 (YYYY-MM 형식)
+        spreadsheet_name: 스프레드시트 이름
+
+    Returns:
+        주제 리스트 (없으면 빈 리스트)
+    """
+    try:
+        worksheet = get_or_create_plans_worksheet(spreadsheet_name)
+        all_values = worksheet.get_all_values()
+
+        for row in all_values[1:]:  # 헤더 제외
+            if row and row[0] == month:
+                topics_json = row[2] if len(row) > 2 else "[]"
+                return json.loads(topics_json)
+
+        return []
+
+    except Exception as e:
+        print(f"월간 기획 로드 실패: {e}")
+        return []
+
+
+def delete_monthly_plan_from_sheets(
+    month: str,
+    spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
+) -> dict:
+    """Google Sheets에서 월간 기획을 삭제합니다.
+
+    Args:
+        month: 월 (YYYY-MM 형식)
+        spreadsheet_name: 스프레드시트 이름
+
+    Returns:
+        {'success': True} or {'success': False, 'error': '...'}
+    """
+    try:
+        worksheet = get_or_create_plans_worksheet(spreadsheet_name)
+        all_values = worksheet.get_all_values()
+
+        for i, row in enumerate(all_values[1:], start=2):  # 헤더 제외
+            if row and row[0] == month:
+                worksheet.delete_rows(i)
+                return {'success': True, 'month': month}
+
+        return {'success': True, 'month': month, 'note': 'not found'}
+
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def get_all_saved_months(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> list:
+    """저장된 모든 월 목록을 반환합니다.
+
+    Returns:
+        [{'month': '2026-03', 'created_at': '...'}, ...]
+    """
+    try:
+        worksheet = get_or_create_plans_worksheet(spreadsheet_name)
+        all_values = worksheet.get_all_values()
+
+        months = []
+        for row in all_values[1:]:  # 헤더 제외
+            if row and row[0]:
+                months.append({
+                    'month': row[0],
+                    'created_at': row[1] if len(row) > 1 else ''
+                })
+
+        return sorted(months, key=lambda x: x['month'], reverse=True)
+
+    except Exception as e:
+        return []
 
 
 # === 테스트용 ===

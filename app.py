@@ -11,6 +11,7 @@ Streamlit 기반 웹 인터페이스
 """
 
 import json
+import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,6 +20,191 @@ import streamlit as st
 
 import db_loader
 import pipeline
+
+
+# ============================================================
+# 월간 기획 저장/로드 (Google Sheets 우선, 실패 시 로컬 파일)
+# ============================================================
+
+PLANS_DIR = Path(__file__).parent / "output" / "monthly_plans"
+PLANS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _save_to_local(month: datetime, topics: list) -> bool:
+    """로컬 파일로 저장 (백업용)."""
+    try:
+        filepath = PLANS_DIR / f"{month.strftime('%Y-%m')}.json"
+        data = {
+            "month": month.strftime("%Y-%m"),
+            "created_at": datetime.now().isoformat(),
+            "topics": topics
+        }
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def _load_from_local(month: datetime) -> list:
+    """로컬 파일에서 로드."""
+    filepath = PLANS_DIR / f"{month.strftime('%Y-%m')}.json"
+    if not filepath.exists():
+        return []
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("topics", [])
+    except Exception:
+        return []
+
+
+def _delete_local(month: datetime) -> bool:
+    """로컬 파일 삭제."""
+    filepath = PLANS_DIR / f"{month.strftime('%Y-%m')}.json"
+    if filepath.exists():
+        filepath.unlink()
+        return True
+    return False
+
+
+def save_monthly_plan(month: datetime, topics: list) -> bool:
+    """월간 기획 저장 (Sheets 우선, 실패 시 로컬)."""
+    month_str = month.strftime("%Y-%m")
+    sheets_error = None
+
+    # 1. Google Sheets 저장 시도
+    try:
+        import sheets_writer
+        result = sheets_writer.save_monthly_plan_to_sheets(month_str, topics)
+        if result.get("success"):
+            # Sheets 성공 시 로컬에도 백업
+            _save_to_local(month, topics)
+            return True
+        else:
+            sheets_error = result.get("error", "알 수 없는 오류")
+    except Exception as e:
+        sheets_error = str(e)
+
+    # 2. 로컬 저장 (폴백)
+    if _save_to_local(month, topics):
+        if sheets_error:
+            st.warning(f"☁️ Sheets 연결 실패: {sheets_error}\n로컬에 저장됨 (이 컴퓨터에서만 접근 가능)")
+        return True
+
+    return False
+
+
+def load_monthly_plan(month: datetime) -> list:
+    """월간 기획 로드 (Sheets 우선, 실패 시 로컬)."""
+    month_str = month.strftime("%Y-%m")
+
+    # 1. Google Sheets에서 로드 시도
+    try:
+        import sheets_writer
+        topics = sheets_writer.load_monthly_plan_from_sheets(month_str)
+        if topics:
+            return topics
+    except Exception:
+        pass  # Sheets 실패 시 로컬 시도
+
+    # 2. 로컬에서 로드
+    return _load_from_local(month)
+
+
+def delete_monthly_plan(month: datetime) -> bool:
+    """월간 기획 삭제 (Sheets + 로컬 모두)."""
+    month_str = month.strftime("%Y-%m")
+
+    # Sheets 삭제 시도
+    try:
+        import sheets_writer
+        sheets_writer.delete_monthly_plan_from_sheets(month_str)
+    except Exception:
+        pass
+
+    # 로컬 삭제
+    _delete_local(month)
+    return True
+
+
+def check_plan_exists(month: datetime) -> bool:
+    """해당 월의 저장된 기획이 있는지 확인."""
+    topics = load_monthly_plan(month)
+    return len(topics) > 0
+
+
+# ============================================================
+# API 상태 확인
+# ============================================================
+
+def check_api_status() -> dict:
+    """각 API 키 설정 상태 확인."""
+    status = {
+        "gemini": {"configured": False, "key_preview": ""},
+        "claude": {"configured": False, "key_preview": ""},
+        "gpt": {"configured": False, "key_preview": ""},
+        "sheets": {"configured": False, "key_preview": "", "working": False}
+    }
+
+    # Gemini (Google API)
+    key = _get_api_key("GOOGLE_API_KEY")
+    if key:
+        status["gemini"]["configured"] = True
+        status["gemini"]["key_preview"] = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else "***"
+
+    # Claude (Anthropic)
+    key = _get_api_key("ANTHROPIC_API_KEY")
+    if key:
+        status["claude"]["configured"] = True
+        status["claude"]["key_preview"] = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else "***"
+
+    # GPT (OpenAI)
+    key = _get_api_key("OPENAI_API_KEY")
+    if key:
+        status["gpt"]["configured"] = True
+        status["gpt"]["key_preview"] = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else "***"
+
+    # Google Sheets
+    creds = _get_api_key("GOOGLE_SHEETS_CREDENTIALS")
+    if creds:
+        status["sheets"]["configured"] = True
+        status["sheets"]["key_preview"] = "서비스 계정 설정됨"
+    else:
+        # 로컬 파일 확인
+        local_path = Path(__file__).parent / "docs" / "klarity-482204-b2cb4fe72848.json"
+        if local_path.exists():
+            status["sheets"]["configured"] = True
+            status["sheets"]["key_preview"] = "로컬 파일 사용"
+
+    # Sheets 실제 연결 테스트 (캐싱)
+    if status["sheets"]["configured"]:
+        try:
+            import sheets_writer
+            # 간단한 연결 테스트 (시트 목록만 확인)
+            sheets_writer.get_or_create_spreadsheet()
+            status["sheets"]["working"] = True
+        except Exception:
+            status["sheets"]["working"] = False
+
+    return status
+
+
+def _get_api_key(key_name: str) -> str:
+    """API 키를 환경 변수 또는 Streamlit secrets에서 가져옵니다."""
+    # 1. 환경 변수에서 시도
+    value = os.getenv(key_name)
+    if value:
+        return value
+
+    # 2. Streamlit secrets에서 시도
+    try:
+        if hasattr(st, 'secrets') and key_name in st.secrets:
+            return st.secrets[key_name]
+    except Exception:
+        pass
+
+    return ""
 
 
 def is_similar_topic(candidate: str, existing_topics: list) -> bool:
@@ -68,13 +254,31 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 def init_session_state():
     """세션 상태 초기화."""
+    # 앱 시작 시 Google Sheets에서 저장된 월 확인
+    default_month = datetime.now().replace(day=1)
+    default_topics = []
+
+    if "planning_month" not in st.session_state:
+        # 첫 로드 시 Sheets에서 가장 최근 저장된 월 로드
+        try:
+            import sheets_writer
+            saved_months = sheets_writer.get_all_saved_months()
+            if saved_months:
+                # 가장 최근 저장된 월 사용
+                latest = saved_months[-1]["month"]  # "2026-03" 형식
+                default_month = datetime.strptime(latest, "%Y-%m")
+                # 해당 월의 데이터도 미리 로드
+                default_topics = sheets_writer.load_monthly_plan_from_sheets(latest)
+        except Exception:
+            pass  # Sheets 연결 실패 시 오늘 날짜 사용
+
     defaults = {
         # 앱 모드
         "app_mode": "planning",  # "planning", "generating", "management"
 
         # 월간 기획
-        "planning_month": datetime.now().replace(day=1),
-        "planned_topics": [],  # [{date, day, topic, status: planned/in_progress/completed}]
+        "planning_month": default_month,
+        "planned_topics": default_topics,  # [{date, day, topic, status: planned/in_progress/completed}]
 
         # 콘텐츠 생성 (현재 작업 중인 주제)
         "current_topic_idx": None,
@@ -111,28 +315,84 @@ def main():
     # 사이드바
     with st.sidebar:
         st.header("📌 메뉴")
-        mode = st.radio(
+
+        mode_options = ["📅 월간 주제 기획", "✨ 콘텐츠 생성", "📋 콘텐츠 관리"]
+        menu_to_mode = {
+            "📅 월간 주제 기획": "planning",
+            "✨ 콘텐츠 생성": "generating",
+            "📋 콘텐츠 관리": "management"
+        }
+        mode_to_index = {
+            "planning": 0,
+            "generating": 1,
+            "management": 2
+        }
+
+        # app_mode 기반으로 index 계산 (프로그래밍 방식 전환 지원)
+        current_index = mode_to_index.get(st.session_state.app_mode, 0)
+
+        # 라디오 버튼 (index 기반, key 사용 안함 - app_mode가 진실의 원천)
+        selected_menu = st.radio(
             "작업 선택",
-            ["📅 월간 주제 기획", "✨ 콘텐츠 생성", "📋 콘텐츠 관리"],
+            mode_options,
+            index=current_index,
             label_visibility="collapsed"
         )
 
-        if "기획" in mode:
-            st.session_state.app_mode = "planning"
-        elif "생성" in mode:
-            st.session_state.app_mode = "generating"
-        else:
-            st.session_state.app_mode = "management"
+        # 라디오 버튼 선택이 현재 모드와 다르면 업데이트
+        new_mode = menu_to_mode.get(selected_menu, "planning")
+        if new_mode != st.session_state.app_mode:
+            st.session_state.app_mode = new_mode
+            st.rerun()
 
         st.divider()
-        st.caption("🤖 AI 파이프라인")
-        st.markdown("""
-        <small>
-        1️⃣ 🔵 <b>Gemini</b> - 주제 제안/분석<br>
-        2️⃣ 🟣 <b>Claude</b> - 영어 문장 생성<br>
-        3️⃣ 🟢 <b>GPT</b> - 품질 검수
-        </small>
-        """, unsafe_allow_html=True)
+
+        # API 상태 표시
+        st.caption("🔑 API 연결 상태")
+        api_status = check_api_status()
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if api_status["gemini"]["configured"]:
+                st.markdown("🔵 Gemini ✅")
+            else:
+                st.markdown("🔵 Gemini ❌")
+
+            if api_status["claude"]["configured"]:
+                st.markdown("🟣 Claude ✅")
+            else:
+                st.markdown("🟣 Claude ❌")
+
+        with col_b:
+            if api_status["gpt"]["configured"]:
+                st.markdown("🟢 GPT ✅")
+            else:
+                st.markdown("🟢 GPT ❌")
+
+            if api_status["sheets"]["configured"]:
+                st.markdown("📊 Sheets ✅")
+            else:
+                st.markdown("📊 Sheets ❌")
+
+        # API 미설정 경고
+        missing_apis = []
+        if not api_status["gemini"]["configured"]:
+            missing_apis.append("GOOGLE_API_KEY")
+        if not api_status["claude"]["configured"]:
+            missing_apis.append("ANTHROPIC_API_KEY")
+        if not api_status["gpt"]["configured"]:
+            missing_apis.append("OPENAI_API_KEY")
+
+        if missing_apis:
+            with st.expander("⚠️ API 설정 필요", expanded=False):
+                st.markdown(f"""
+                **누락된 API 키:**
+                {', '.join(missing_apis)}
+
+                **설정 방법:**
+                1. `.env` 파일에 추가
+                2. 또는 Streamlit secrets 설정
+                """)
 
         # 진행 상황 표시 (복습일 제외)
         if st.session_state.planned_topics:
@@ -171,7 +431,19 @@ def render_planning_view():
             value=st.session_state.planning_month,
             help="해당 월의 첫째 날을 선택하세요"
         )
-        st.session_state.planning_month = datetime.combine(selected_month, datetime.min.time())
+        new_month = datetime.combine(selected_month, datetime.min.time()).replace(day=1)
+
+        # 월이 변경되면 저장된 기획 로드 시도
+        if new_month != st.session_state.planning_month:
+            st.session_state.planning_month = new_month
+            # Google Sheets에서 저장된 기획 로드
+            saved_topics = load_monthly_plan(new_month)
+            if saved_topics:
+                st.session_state.planned_topics = saved_topics
+                st.toast(f"☁️ {new_month.strftime('%Y년 %m월')} Google Sheets에서 로드됨")
+            else:
+                st.session_state.planned_topics = []
+            st.rerun()
 
     with col2:
         weather = st.text_input(
@@ -180,6 +452,15 @@ def render_planning_view():
             placeholder="예: 봄, 따뜻함"
         )
         st.session_state.weather_note = weather
+
+    # 저장된 기획 존재 여부 확인 (Google Sheets에서)
+    current_month = st.session_state.planning_month
+
+    # 세션에 기획이 없으면 Sheets에서 로드 시도
+    if not st.session_state.planned_topics:
+        saved_topics = load_monthly_plan(current_month)
+        if saved_topics:
+            st.session_state.planned_topics = saved_topics
 
     st.divider()
 
@@ -198,6 +479,10 @@ def render_planning_view():
                 create_empty_monthly_topics()
 
     else:
+        # Sheets에 저장되어 있는지 확인
+        saved_plan_exists = check_plan_exists(current_month)
+        if saved_plan_exists:
+            st.success(f"☁️ {current_month.strftime('%Y년 %m월')} 기획이 Google Sheets에 저장되어 있습니다.")
         render_topic_list()
 
 
@@ -215,20 +500,25 @@ def generate_monthly_topics():
     # 일요일 제외한 날짜 (주제 제안 대상)
     content_dates = [d for d in all_dates if d.weekday() != 6]
 
-    with st.spinner(f"🔵 Gemini가 {len(content_dates)}일치 주제를 제안하고 있어요..."):
-        try:
-            topics = []
-            weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+    progress_bar = st.progress(0, text="🔵 Gemini가 주제를 제안하고 있어요...")
+    status_text = st.empty()
 
-            # 이미 할당된 주제 추적 (중복 방지용)
-            already_used_topics = []
+    try:
+        topics = []
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+        already_used_topics = []
+        errors = []
 
-            # 일요일 제외하고 주제 제안
-            for date in content_dates:
+        # 일요일 제외하고 주제 제안
+        for i, date in enumerate(content_dates):
+            progress = (i + 1) / len(content_dates)
+            progress_bar.progress(progress, text=f"🔵 {i+1}/{len(content_dates)} - {date.strftime('%m/%d')} 주제 생성 중...")
+
+            try:
                 result = pipeline.step0_suggest(
                     target_date=date,
                     weather_note=st.session_state.weather_note or "정보 없음",
-                    already_used=already_used_topics  # 중복 방지
+                    already_used=already_used_topics
                 )
                 suggestions = result.get("suggestions", [])
 
@@ -236,12 +526,10 @@ def generate_monthly_topics():
                 topic_name = f"주제 {date.day}일"
                 for s in suggestions:
                     candidate = s.get("topic", "")
-                    # 이미 사용된 주제와 유사한지 체크 (키워드 기반)
                     if candidate and not is_similar_topic(candidate, already_used_topics):
                         topic_name = candidate
                         break
 
-                # 사용된 주제 기록
                 already_used_topics.append(topic_name)
 
                 topics.append({
@@ -253,31 +541,62 @@ def generate_monthly_topics():
                     "suggestions": suggestions
                 })
 
-            # 일요일은 복습으로 추가
-            for date in all_dates:
-                if date.weekday() == 6:  # 일요일
-                    topics.append({
-                        "date": date.strftime("%Y-%m-%d"),
-                        "day": "일",
-                        "topic": "📚 복습",
-                        "status": "review",
-                        "is_review": True,
-                        "suggestions": []
-                    })
+            except Exception as e:
+                # 개별 날짜 실패 시 기본값으로 추가하고 계속 진행
+                errors.append(f"{date.strftime('%m/%d')}: {str(e)[:50]}")
+                topics.append({
+                    "date": date.strftime("%Y-%m-%d"),
+                    "day": weekdays[date.weekday()],
+                    "topic": f"📝 {date.day}일 주제 (직접 입력)",
+                    "status": "planned",
+                    "is_review": False,
+                    "suggestions": []
+                })
 
-            # 날짜순 정렬
-            topics.sort(key=lambda x: x["date"])
+        progress_bar.progress(1.0, text="✅ 주제 생성 완료!")
 
-            st.session_state.planned_topics = topics
-            st.success(f"✅ {len(content_dates)}일치 주제 제안 완료! (복습일 {len(all_dates) - len(content_dates)}일 포함)")
-            st.rerun()
+        # 일요일은 복습으로 추가
+        for date in all_dates:
+            if date.weekday() == 6:  # 일요일
+                topics.append({
+                    "date": date.strftime("%Y-%m-%d"),
+                    "day": "일",
+                    "topic": "📚 복습",
+                    "status": "review",
+                    "is_review": True,
+                    "suggestions": []
+                })
 
-        except Exception as e:
-            st.error(f"주제 제안 실패: {e}")
+        # 날짜순 정렬
+        topics.sort(key=lambda x: x["date"])
+
+        st.session_state.planned_topics = topics
+
+        # 자동 저장 (토큰 절약)
+        if save_monthly_plan(month_start, topics):
+            st.success(f"✅ {len(content_dates)}일치 주제 제안 완료! 💾 Google Sheets에 자동 저장됨")
+        else:
+            st.warning(f"⚠️ {len(content_dates)}일치 주제 제안 완료! 저장 실패 - 수동으로 저장하세요")
+
+        # 에러가 있었다면 표시
+        if errors:
+            with st.expander(f"⚠️ {len(errors)}개 날짜에서 에러 발생 (기본값으로 대체됨)"):
+                for err in errors:
+                    st.caption(err)
+
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"주제 제안 실패: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
 def create_empty_monthly_topics():
-    """빈 월간 주제 리스트 생성 (일요일=복습 포함)."""
+    """빈 월간 주제 리스트 생성 (일요일=복습 포함).
+
+    직접 입력용 빈 템플릿. 저장은 수동으로 해야 함.
+    """
     month_start = st.session_state.planning_month.replace(day=1)
 
     dates = []
@@ -419,6 +738,17 @@ def render_topic_list():
                 st.caption("복습")
             elif topic["status"] != "completed":
                 if st.button("생성", key=f"gen_{idx}", type="primary"):
+                    # 현재 입력된 주제 값 저장 (위젯에서 직접 읽기)
+                    if f"topic_{idx}" in st.session_state:
+                        st.session_state.planned_topics[idx]["topic"] = st.session_state[f"topic_{idx}"]
+                    elif f"select_{idx}" in st.session_state:
+                        selected = st.session_state[f"select_{idx}"]
+                        if selected != "✏️ 직접 입력...":
+                            st.session_state.planned_topics[idx]["topic"] = selected
+                        elif f"manual_{idx}" in st.session_state:
+                            st.session_state.planned_topics[idx]["topic"] = st.session_state[f"manual_{idx}"]
+
+                    # 생성 모드로 전환
                     st.session_state.current_topic_idx = idx
                     st.session_state.gen_step = 0
                     st.session_state.app_mode = "generating"
@@ -427,22 +757,43 @@ def render_topic_list():
     st.divider()
 
     # 액션 버튼
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        if st.button("🗑️ 주제 리스트 초기화", type="secondary"):
-            st.session_state.planned_topics = []
+        if st.button("☁️ Sheets에 저장", use_container_width=True):
+            month = st.session_state.planning_month
+            with st.spinner("Google Sheets에 저장 중..."):
+                if save_monthly_plan(month, topics):
+                    st.success(f"☁️ {month.strftime('%Y년 %m월')} Google Sheets 저장 완료!")
+                else:
+                    st.error("저장 실패. Sheets 연결을 확인하세요.")
             st.rerun()
 
     with col2:
-        # 빈 주제 확인
-        empty_topics = [t for t in topics if not t["topic"].strip()]
-        if empty_topics:
-            st.warning(f"⚠️ {len(empty_topics)}개 주제가 비어있습니다")
+        if st.button("🔄 Gemini로 재생성", use_container_width=True):
+            # 기존 기획 삭제 후 재생성
+            st.session_state.planned_topics = []
+            delete_monthly_plan(st.session_state.planning_month)
+            st.rerun()
 
     with col3:
-        completed = sum(1 for t in topics if t["status"] == "completed")
-        st.info(f"완료: {completed}/{len(topics)}")
+        if st.button("🗑️ 초기화 & 삭제", type="secondary", use_container_width=True):
+            # 세션 및 Sheets에서 삭제
+            st.session_state.planned_topics = []
+            delete_monthly_plan(st.session_state.planning_month)
+            st.toast("🗑️ 기획이 초기화되고 Sheets에서도 삭제되었습니다.")
+            st.rerun()
+
+    with col4:
+        # 복습일 제외한 콘텐츠만 계산
+        content_only = [t for t in topics if not t.get("is_review", False)]
+        completed = sum(1 for t in content_only if t["status"] == "completed")
+        st.info(f"완료: {completed}/{len(content_only)}")
+
+    # 빈 주제 경고
+    empty_topics = [t for t in topics if not t.get("is_review", False) and not t["topic"].strip()]
+    if empty_topics:
+        st.warning(f"⚠️ {len(empty_topics)}개 주제가 비어있습니다")
 
 
 # ============================================================
@@ -757,8 +1108,9 @@ def render_gen_step3_review_check():
             for var_key in ["A", "B", "C"]:
                 var_review = variants_review.get(var_key, {})
                 total = var_review.get("total", 0)
+                max_score = var_review.get("max_possible", 60)  # 6개 항목 × 10점
                 verdict = var_review.get("verdict", "?")
-                st.write(f"  {var_key}안: {total}/80 ({verdict})")
+                st.write(f"  {var_key}안: {total}/{max_score} ({verdict})")
 
     st.divider()
 
@@ -827,6 +1179,10 @@ def render_gen_step4_final():
                     if result["success"]:
                         # 상태 업데이트
                         st.session_state.planned_topics[st.session_state.current_topic_idx]["status"] = "completed"
+
+                        # 월간 기획 자동 저장 (완료 상태 반영)
+                        target_month = datetime.strptime(target_date, "%Y-%m-%d").replace(day=1)
+                        save_monthly_plan(target_month, st.session_state.planned_topics)
 
                         st.success(f"✅ 저장 완료! (No.{result['no']}, Row {result['row']})")
                         st.balloons()

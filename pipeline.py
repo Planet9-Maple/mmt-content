@@ -308,9 +308,17 @@ def extract_json(text: str) -> dict:
 def step0_suggest(
     target_date: datetime,
     weather_note: str = "정보 없음",
-    df=None
+    df=None,
+    already_used: list = None
 ) -> dict:
-    """Step 0: 주제 후보 5-7개 제안."""
+    """Step 0: 주제 후보 5-7개 제안.
+
+    Args:
+        target_date: 발송 대상 날짜
+        weather_note: 날씨 정보
+        df: DB DataFrame
+        already_used: 이번 월간 기획에서 이미 사용된 주제 리스트 (중복 방지용)
+    """
     logger.info("=" * 50)
     logger.info("Step 0: 주제 제안 시작 (Gemini)")
 
@@ -351,6 +359,12 @@ def step0_suggest(
     cat_dist = db_loader.get_category_distribution(months=1, df=df)
     cat_dist_str = "\n".join([f"- {cat}: {cnt}건" for cat, cnt in cat_dist.items()])
 
+    # 이번 달 이미 사용된 주제
+    already_used_str = ""
+    if already_used:
+        already_used_str = "\n## ⚠️ 이번 달 이미 할당된 주제 (피해주세요!)\n"
+        already_used_str += "\n".join([f"- {t}" for t in already_used])
+
     # User message 구성
     user_message = f"""## 발송 정보
 - 날짜: {target_date.strftime('%Y-%m-%d')}
@@ -363,6 +377,7 @@ def step0_suggest(
 
 ## 최근 1개월 카테고리 분포
 {cat_dist_str}
+{already_used_str}
 """
 
     # API 호출

@@ -11,6 +11,7 @@ Streamlit 기반 웹 인터페이스
 """
 
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -18,6 +19,40 @@ import streamlit as st
 
 import db_loader
 import pipeline
+
+
+def is_similar_topic(candidate: str, existing_topics: list) -> bool:
+    """주제가 기존 주제들과 유사한지 체크.
+
+    키워드 기반 간단한 유사도 체크.
+    같은 핵심 키워드가 2개 이상 겹치면 유사로 판단.
+    """
+    if not existing_topics:
+        return False
+
+    # 이모지 제거하고 키워드 추출
+    def extract_keywords(text):
+        clean = re.sub(r'[^\w\s가-힣]', '', text)
+        words = set(clean.split())
+        # 짧은 단어 제외 (조사 등)
+        return {w for w in words if len(w) >= 2}
+
+    candidate_keywords = extract_keywords(candidate)
+
+    for existing in existing_topics:
+        existing_keywords = extract_keywords(existing)
+        common = candidate_keywords & existing_keywords
+
+        # 핵심 키워드 2개 이상 겹치면 유사
+        if len(common) >= 2:
+            return True
+
+        # 정확히 같은 주제면 유사
+        if candidate.strip() == existing.strip():
+            return True
+
+    return False
+
 
 # 페이지 설정
 st.set_page_config(
@@ -167,7 +202,7 @@ def render_planning_view():
 
 
 def generate_monthly_topics():
-    """Gemini로 월간 주제 생성."""
+    """Gemini로 월간 주제 생성 (중복 방지 포함)."""
     month_start = st.session_state.planning_month.replace(day=1)
 
     # 해당 월의 모든 날짜 계산 (일요일 포함)
@@ -185,16 +220,29 @@ def generate_monthly_topics():
             topics = []
             weekdays = ["월", "화", "수", "목", "금", "토", "일"]
 
+            # 이미 할당된 주제 추적 (중복 방지용)
+            already_used_topics = []
+
             # 일요일 제외하고 주제 제안
             for date in content_dates:
                 result = pipeline.step0_suggest(
                     target_date=date,
-                    weather_note=st.session_state.weather_note or "정보 없음"
+                    weather_note=st.session_state.weather_note or "정보 없음",
+                    already_used=already_used_topics  # 중복 방지
                 )
                 suggestions = result.get("suggestions", [])
 
-                # 첫 번째 추천 주제 사용
-                topic_name = suggestions[0].get("topic", f"주제 {date.day}일") if suggestions else f"주제 {date.day}일"
+                # 이미 사용된 주제와 겹치지 않는 첫 번째 주제 선택
+                topic_name = f"주제 {date.day}일"
+                for s in suggestions:
+                    candidate = s.get("topic", "")
+                    # 이미 사용된 주제와 유사한지 체크 (키워드 기반)
+                    if candidate and not is_similar_topic(candidate, already_used_topics):
+                        topic_name = candidate
+                        break
+
+                # 사용된 주제 기록
+                already_used_topics.append(topic_name)
 
                 topics.append({
                     "date": date.strftime("%Y-%m-%d"),
@@ -212,7 +260,7 @@ def generate_monthly_topics():
                         "date": date.strftime("%Y-%m-%d"),
                         "day": "일",
                         "topic": "📚 복습",
-                        "status": "review",  # 복습은 별도 상태
+                        "status": "review",
                         "is_review": True,
                         "suggestions": []
                     })
@@ -311,16 +359,59 @@ def render_topic_list():
                 # 복습일은 수정 불가
                 st.markdown(f"📚 **복습** *(별도 제작)*")
             else:
-                # 주제 편집 가능
-                new_topic = st.text_input(
-                    "주제",
-                    value=topic["topic"],
-                    key=f"topic_{idx}",
-                    label_visibility="collapsed",
-                    placeholder="주제를 입력하세요"
-                )
-                if new_topic != topic["topic"]:
-                    st.session_state.planned_topics[idx]["topic"] = new_topic
+                # suggestions가 있으면 드롭다운 + 직접입력 옵션
+                suggestions = topic.get("suggestions", [])
+
+                if suggestions:
+                    # 제안된 주제 옵션 구성
+                    options = [s.get("topic", "") for s in suggestions if s.get("topic")]
+                    # "직접 입력" 옵션 추가
+                    options.append("✏️ 직접 입력...")
+
+                    # 현재 값이 옵션에 있는지 확인
+                    current_val = topic["topic"]
+                    if current_val in options:
+                        default_idx = options.index(current_val)
+                    elif current_val:
+                        # 직접 입력된 값이면 "직접 입력" 선택
+                        default_idx = len(options) - 1
+                    else:
+                        default_idx = 0
+
+                    selected = st.selectbox(
+                        "주제 선택",
+                        options,
+                        index=default_idx,
+                        key=f"select_{idx}",
+                        label_visibility="collapsed"
+                    )
+
+                    if selected == "✏️ 직접 입력...":
+                        # 직접 입력 모드
+                        new_topic = st.text_input(
+                            "직접 입력",
+                            value=current_val if current_val not in options[:-1] else "",
+                            key=f"manual_{idx}",
+                            label_visibility="collapsed",
+                            placeholder="주제를 직접 입력하세요"
+                        )
+                        if new_topic and new_topic != topic["topic"]:
+                            st.session_state.planned_topics[idx]["topic"] = new_topic
+                    else:
+                        # 드롭다운 선택
+                        if selected != topic["topic"]:
+                            st.session_state.planned_topics[idx]["topic"] = selected
+                else:
+                    # suggestions 없으면 기존 텍스트 입력
+                    new_topic = st.text_input(
+                        "주제",
+                        value=topic["topic"],
+                        key=f"topic_{idx}",
+                        label_visibility="collapsed",
+                        placeholder="주제를 입력하세요"
+                    )
+                    if new_topic != topic["topic"]:
+                        st.session_state.planned_topics[idx]["topic"] = new_topic
 
         with col4:
             if is_review:

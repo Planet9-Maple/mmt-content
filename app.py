@@ -328,15 +328,55 @@ def render_step3_results():
 
     st.divider()
 
+    # Google Sheets 저장
+    st.subheader("📊 Google Sheets에 저장")
+
+    # 저장 상태 확인
+    if "sheets_saved" not in st.session_state:
+        st.session_state.sheets_saved = False
+
+    if st.session_state.sheets_saved:
+        st.success(f"✅ Google Sheets에 저장 완료! [시트 열기]({st.session_state.sheets_url})")
+    else:
+        if st.button("📊 Google Sheets에 저장", type="primary"):
+            with st.spinner("Google Sheets에 저장 중..."):
+                try:
+                    import sheets_writer
+
+                    # 추천 조합으로 텍스트 추출
+                    l1_text = levels.get("level_1", {}).get("variants", {}).get(best_combo.get("level_1", "A"), {}).get("admin_text", "")
+                    l2_text = levels.get("level_2", {}).get("variants", {}).get(best_combo.get("level_2", "A"), {}).get("admin_text", "")
+                    l3_text = levels.get("level_3", {}).get("variants", {}).get(best_combo.get("level_3", "A"), {}).get("admin_text", "")
+
+                    result_save = sheets_writer.append_content(
+                        topic=topic,
+                        target_date=target_date,
+                        level1_text=l1_text,
+                        level2_text=l2_text,
+                        level3_text=l3_text
+                    )
+
+                    if result_save['success']:
+                        st.session_state.sheets_saved = True
+                        st.session_state.sheets_url = result_save['url']
+                        st.success(f"✅ 저장 완료! No.{result_save['no']} 추가됨")
+                        st.rerun()
+                    else:
+                        st.error(f"저장 실패: {result_save['error']}")
+                except Exception as e:
+                    st.error(f"Google Sheets 연동 실패: {e}")
+
+    st.divider()
+
     # 다운로드 버튼
-    st.subheader("📥 다운로드")
+    st.subheader("📥 파일 다운로드")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         json_str = json.dumps(result, ensure_ascii=False, indent=2)
         st.download_button(
-            "📄 JSON 다운로드",
+            "📄 JSON",
             data=json_str,
             file_name=f"{target_date}_{topic[:10]}.json",
             mime="application/json"
@@ -354,7 +394,7 @@ def render_step3_results():
     with col3:
         csv_content = generate_csv(result)
         st.download_button(
-            "📊 CSV 다운로드",
+            "📊 CSV",
             data=csv_content,
             file_name=f"{target_date}_{topic[:10]}.csv",
             mime="text/csv"
@@ -362,7 +402,7 @@ def render_step3_results():
 
     st.divider()
 
-    if st.button("🔄 새 콘텐츠 생성", type="primary"):
+    if st.button("🔄 새 콘텐츠 생성"):
         st.session_state.step = 0
         st.session_state.suggestions = []
         st.session_state.selected_topic = ""

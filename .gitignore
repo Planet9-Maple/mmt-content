@@ -3,6 +3,10 @@
 .env.local
 .streamlit/secrets.toml
 
+# Google 서비스 계정 키 (절대 커밋 금지)
+docs/*.json
+*.json.key
+
 # Python
 __pycache__/
 *.py[cod]

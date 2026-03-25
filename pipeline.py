@@ -96,27 +96,50 @@ def call_gemini(
     if not api_key:
         raise ValueError("GOOGLE_API_KEY가 설정되지 않았습니다.")
 
-    logger.info(f"{PROVIDER_EMOJI['gemini']} Gemini API 호출: {model}, temp={temperature}")
+    # Fallback 모델 리스트 (503 에러 시 순차 시도)
+    models_to_try = [model, "gemini-2.0-flash", "gemini-1.5-flash"]
+    # 중복 제거
+    models_to_try = list(dict.fromkeys(models_to_try))
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    last_error = None
 
-    payload = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": f"{system_prompt}\n\n---\n\n{user_message}"}]
+    for try_model in models_to_try:
+        logger.info(f"{PROVIDER_EMOJI['gemini']} Gemini API 호출: {try_model}, temp={temperature}")
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{try_model}:generateContent?key={api_key}"
+
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": f"{system_prompt}\n\n---\n\n{user_message}"}]
+                }
+            ],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+                "responseMimeType": "application/json",
             }
-        ],
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens,
-            "responseMimeType": "application/json",
-            "thinkingConfig": {"thinkingBudget": 0}  # thinking 비활성화
         }
-    }
 
-    response = requests.post(url, json=payload, timeout=120)
-    response.raise_for_status()
+        # gemini-2.5 모델만 thinkingConfig 지원
+        if "2.5" in try_model:
+            payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
+
+        try:
+            response = requests.post(url, json=payload, timeout=120)
+            response.raise_for_status()
+            break  # 성공하면 루프 종료
+        except requests.exceptions.HTTPError as e:
+            last_error = e
+            if response.status_code in [503, 500, 429]:
+                logger.warning(f"{try_model} 실패 ({response.status_code}), 다음 모델 시도...")
+                continue
+            raise  # 다른 에러는 즉시 발생
+
+    else:
+        # 모든 모델 실패
+        raise last_error or ValueError("모든 Gemini 모델 호출 실패")
 
     result = response.json()
 

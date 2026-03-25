@@ -99,14 +99,16 @@ def main():
         </small>
         """, unsafe_allow_html=True)
 
-        # 진행 상황 표시
+        # 진행 상황 표시 (복습일 제외)
         if st.session_state.planned_topics:
             st.divider()
             st.caption("📊 진행 현황")
-            total = len(st.session_state.planned_topics)
-            completed = sum(1 for t in st.session_state.planned_topics if t.get("status") == "completed")
+            # 복습일 제외한 콘텐츠만 계산
+            content_topics = [t for t in st.session_state.planned_topics if not t.get("is_review", False)]
+            total = len(content_topics)
+            completed = sum(1 for t in content_topics if t.get("status") == "completed")
             st.progress(completed / total if total > 0 else 0)
-            st.write(f"완료: {completed}/{total}")
+            st.write(f"콘텐츠: {completed}/{total}")
 
     # 메인 영역
     if st.session_state.app_mode == "planning":
@@ -168,21 +170,23 @@ def generate_monthly_topics():
     """Gemini로 월간 주제 생성."""
     month_start = st.session_state.planning_month.replace(day=1)
 
-    # 해당 월의 날짜 계산 (일요일 제외)
-    dates = []
+    # 해당 월의 모든 날짜 계산 (일요일 포함)
+    all_dates = []
     current = month_start
     while current.month == month_start.month:
-        if current.weekday() != 6:  # 일요일 제외
-            dates.append(current)
+        all_dates.append(current)
         current += timedelta(days=1)
 
-    with st.spinner(f"🔵 Gemini가 {len(dates)}일치 주제를 제안하고 있어요..."):
+    # 일요일 제외한 날짜 (주제 제안 대상)
+    content_dates = [d for d in all_dates if d.weekday() != 6]
+
+    with st.spinner(f"🔵 Gemini가 {len(content_dates)}일치 주제를 제안하고 있어요..."):
         try:
             topics = []
             weekdays = ["월", "화", "수", "목", "금", "토", "일"]
 
-            # 여러 날짜에 대해 주제 제안 (배치로 처리)
-            for date in dates:
+            # 일요일 제외하고 주제 제안
+            for date in content_dates:
                 result = pipeline.step0_suggest(
                     target_date=date,
                     weather_note=st.session_state.weather_note or "정보 없음"
@@ -197,11 +201,27 @@ def generate_monthly_topics():
                     "day": weekdays[date.weekday()],
                     "topic": topic_name,
                     "status": "planned",
-                    "suggestions": suggestions  # 다른 후보들도 저장
+                    "is_review": False,
+                    "suggestions": suggestions
                 })
 
+            # 일요일은 복습으로 추가
+            for date in all_dates:
+                if date.weekday() == 6:  # 일요일
+                    topics.append({
+                        "date": date.strftime("%Y-%m-%d"),
+                        "day": "일",
+                        "topic": "📚 복습",
+                        "status": "review",  # 복습은 별도 상태
+                        "is_review": True,
+                        "suggestions": []
+                    })
+
+            # 날짜순 정렬
+            topics.sort(key=lambda x: x["date"])
+
             st.session_state.planned_topics = topics
-            st.success(f"✅ {len(topics)}일치 주제 제안 완료!")
+            st.success(f"✅ {len(content_dates)}일치 주제 제안 완료! (복습일 {len(all_dates) - len(content_dates)}일 포함)")
             st.rerun()
 
         except Exception as e:
@@ -209,25 +229,27 @@ def generate_monthly_topics():
 
 
 def create_empty_monthly_topics():
-    """빈 월간 주제 리스트 생성."""
+    """빈 월간 주제 리스트 생성 (일요일=복습 포함)."""
     month_start = st.session_state.planning_month.replace(day=1)
 
     dates = []
     current = month_start
     while current.month == month_start.month:
-        if current.weekday() != 6:  # 일요일 제외
-            dates.append(current)
+        dates.append(current)
         current += timedelta(days=1)
 
     weekdays = ["월", "화", "수", "목", "금", "토", "일"]
     topics = []
 
     for date in dates:
+        is_sunday = date.weekday() == 6
+
         topics.append({
             "date": date.strftime("%Y-%m-%d"),
             "day": weekdays[date.weekday()],
-            "topic": "",
-            "status": "planned",
+            "topic": "📚 복습" if is_sunday else "",
+            "status": "review" if is_sunday else "planned",
+            "is_review": is_sunday,
             "suggestions": []
         })
 
@@ -241,26 +263,38 @@ def render_topic_list():
 
     topics = st.session_state.planned_topics
 
+    # 콘텐츠 수 계산 (복습일 제외)
+    content_count = sum(1 for t in topics if not t.get("is_review", False))
+    review_count = sum(1 for t in topics if t.get("is_review", False))
+
+    st.caption(f"콘텐츠 {content_count}일 + 복습 {review_count}일 = 총 {len(topics)}일")
+
     # 상태별 필터
     filter_status = st.radio(
         "필터",
-        ["전체", "미완료", "완료"],
+        ["전체", "미완료", "완료", "복습"],
         horizontal=True
     )
 
     if filter_status == "미완료":
-        filtered_topics = [(i, t) for i, t in enumerate(topics) if t["status"] != "completed"]
+        filtered_topics = [(i, t) for i, t in enumerate(topics)
+                          if t["status"] not in ["completed", "review"]]
     elif filter_status == "완료":
         filtered_topics = [(i, t) for i, t in enumerate(topics) if t["status"] == "completed"]
+    elif filter_status == "복습":
+        filtered_topics = [(i, t) for i, t in enumerate(topics) if t.get("is_review", False)]
     else:
         filtered_topics = list(enumerate(topics))
 
     # 주제 테이블
     for idx, topic in filtered_topics:
+        is_review = topic.get("is_review", False)
+
         status_emoji = {
             "planned": "⬜",
             "in_progress": "🔄",
-            "completed": "✅"
+            "completed": "✅",
+            "review": "📚"
         }.get(topic["status"], "⬜")
 
         col1, col2, col3, col4 = st.columns([1, 1, 3, 1])
@@ -269,22 +303,30 @@ def render_topic_list():
             st.write(f"{status_emoji} **{topic['date']}**")
 
         with col2:
-            st.write(f"({topic['day']})")
+            day_display = f"({topic['day']})" if not is_review else f"(**{topic['day']}**)"
+            st.write(day_display)
 
         with col3:
-            # 주제 편집 가능
-            new_topic = st.text_input(
-                "주제",
-                value=topic["topic"],
-                key=f"topic_{idx}",
-                label_visibility="collapsed",
-                placeholder="주제를 입력하세요"
-            )
-            if new_topic != topic["topic"]:
-                st.session_state.planned_topics[idx]["topic"] = new_topic
+            if is_review:
+                # 복습일은 수정 불가
+                st.markdown(f"📚 **복습** *(별도 제작)*")
+            else:
+                # 주제 편집 가능
+                new_topic = st.text_input(
+                    "주제",
+                    value=topic["topic"],
+                    key=f"topic_{idx}",
+                    label_visibility="collapsed",
+                    placeholder="주제를 입력하세요"
+                )
+                if new_topic != topic["topic"]:
+                    st.session_state.planned_topics[idx]["topic"] = new_topic
 
         with col4:
-            if topic["status"] != "completed":
+            if is_review:
+                # 복습일은 생성 버튼 없음
+                st.caption("복습")
+            elif topic["status"] != "completed":
                 if st.button("생성", key=f"gen_{idx}", type="primary"):
                     st.session_state.current_topic_idx = idx
                     st.session_state.gen_step = 0
@@ -719,8 +761,11 @@ def render_gen_step4_final():
 
 
 def find_next_incomplete_topic():
-    """다음 미완료 주제 인덱스 찾기."""
+    """다음 미완료 주제 인덱스 찾기 (복습일 제외)."""
     for i, topic in enumerate(st.session_state.planned_topics):
+        # 복습일은 건너뛰기
+        if topic.get("is_review", False):
+            continue
         if topic["status"] != "completed":
             return i
     return None

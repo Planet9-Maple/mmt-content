@@ -79,28 +79,7 @@ def main():
         st.session_state.app_mode = "create" if "생성" in mode else "manage"
 
         st.divider()
-
-        st.header("📊 DB 현황")
-        try:
-            df = db_loader.load_db()
-            content_df = db_loader.get_content_rows(df)
-            st.metric("총 콘텐츠", f"{len(content_df)}건")
-            st.metric("다음 번호", db_loader.get_next_content_number(df))
-
-            st.subheader("최근 1개월 카테고리")
-            dist = db_loader.get_category_distribution(months=1, df=df)
-            for cat, cnt in sorted(dist.items(), key=lambda x: -x[1])[:5]:
-                st.text(f"  {cat}: {cnt}건")
-
-        except Exception as e:
-            st.error(f"DB 로드 실패: {e}")
-
-        st.divider()
-        st.header("🤖 모델 설정")
-        st.caption("config/ 폴더에서 수정 가능")
-        st.text("Step 0-1: Gemini")
-        st.text("Step 2-3: Claude")
-        st.text("Step 4: GPT")
+        st.caption("🤖 Gemini → Claude → GPT")
 
     # 메인 영역
     if st.session_state.app_mode == "manage":

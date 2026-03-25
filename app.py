@@ -293,6 +293,10 @@ def init_session_state():
         # 기타
         "weather_note": "",
         "sheets_contents": [],
+
+        # 저장 완료 플래그 (중첩 버튼 문제 해결용)
+        "save_completed": False,
+        "save_result": None,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -1357,6 +1361,9 @@ def render_gen_step3_final():
                 try:
                     import sheets_writer
 
+                    # 디버그: 저장할 데이터 확인
+                    st.write(f"🔍 저장 시도: {topic}, {target_date}")
+
                     result = sheets_writer.append_content(
                         topic=topic,
                         target_date=target_date,
@@ -1365,35 +1372,60 @@ def render_gen_step3_final():
                         level3_text=final_texts.get("level_3", "")
                     )
 
-                    if result["success"]:
+                    st.write(f"🔍 저장 결과: {result}")
+
+                    if result.get("success"):
                         # 상태 업데이트
                         st.session_state.planned_topics[st.session_state.current_topic_idx]["status"] = "completed"
 
+                        # 저장 완료 플래그 설정 (중첩 버튼 대신 플래그 사용)
+                        st.session_state.save_completed = True
+                        st.session_state.save_result = result
+
                         # 월간 기획 자동 저장 (완료 상태 반영)
                         target_month = datetime.strptime(target_date, "%Y-%m-%d").replace(day=1)
-                        save_monthly_plan(target_month, st.session_state.planned_topics)
+                        save_result = save_monthly_plan(target_month, st.session_state.planned_topics)
+                        st.write(f"🔍 월간 기획 저장: {save_result}")
 
-                        st.success(f"✅ 저장 완료! (No.{result['no']}, Row {result['row']})")
-                        st.balloons()
-
-                        # 다음 주제로 이동 또는 기획으로 돌아가기
-                        next_idx = find_next_incomplete_topic()
-
-                        if next_idx is not None:
-                            if st.button("➡️ 다음 주제로"):
-                                reset_generation_state()
-                                st.session_state.current_topic_idx = next_idx
-                                st.rerun()
-
-                        if st.button("📅 월간 기획으로"):
-                            reset_generation_state()
-                            st.session_state.app_mode = "planning"
-                            st.rerun()
+                        st.rerun()  # 상태 업데이트 후 리런
                     else:
-                        st.error(f"저장 실패: {result['error']}")
+                        st.error(f"❌ 저장 실패: {result.get('error', '알 수 없는 오류')}")
 
                 except Exception as e:
-                    st.error(f"저장 실패: {e}")
+                    import traceback
+                    st.error(f"❌ 저장 실패: {e}")
+                    st.code(traceback.format_exc())
+
+    # 저장 완료 후 표시 (버튼 콜백 밖에서 처리)
+    if st.session_state.get("save_completed"):
+        save_result = st.session_state.get("save_result", {})
+        st.success(f"✅ 저장 완료! (No.{save_result.get('no', '?')}, Row {save_result.get('row', '?')})")
+        st.balloons()
+
+        # 플래그 초기화
+        st.session_state.save_completed = False
+        st.session_state.save_result = None
+
+        st.divider()
+
+        # 다음 주제로 이동 또는 기획으로 돌아가기 (중첩 버튼 아닌 별도 버튼)
+        next_idx = find_next_incomplete_topic()
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if next_idx is not None:
+                if st.button("➡️ 다음 주제로", use_container_width=True):
+                    reset_generation_state()
+                    st.session_state.current_topic_idx = next_idx
+                    st.rerun()
+            else:
+                st.info("🎉 모든 주제 완료!")
+
+        with col_b:
+            if st.button("📅 월간 기획으로", use_container_width=True):
+                reset_generation_state()
+                st.session_state.app_mode = "planning"
+                st.rerun()
 
 
 def find_next_incomplete_topic():

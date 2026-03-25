@@ -190,12 +190,28 @@ def get_all_contents(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB
         worksheet = spreadsheet.sheet1
         all_values = worksheet.get_all_values()
 
-        if len(all_values) <= 1:
+        if len(all_values) == 0:
             return []
 
-        headers = all_values[0]
+        # 첫 행이 헤더인지 데이터인지 확인
+        first_row = all_values[0]
+        has_header = first_row and first_row[0] == "No."
+
+        if has_header:
+            # 헤더가 있으면 2행부터 데이터
+            data_rows = all_values[1:]
+            start_row = 2
+        else:
+            # 헤더가 없으면 1행부터 데이터 (헤더 삽입)
+            print("헤더 없음 - 헤더 행 삽입 중...")
+            worksheet.insert_row(COLUMNS, 1)
+            data_rows = all_values  # 기존 모든 행이 데이터
+            start_row = 2
+
         contents = []
-        for i, row in enumerate(all_values[1:], start=2):  # 행 번호는 2부터
+        for i, row in enumerate(data_rows, start=start_row):
+            if not row or not row[0]:  # 빈 행 스킵
+                continue
             content = {
                 "row_number": i,
                 "no": row[0] if len(row) > 0 else "",

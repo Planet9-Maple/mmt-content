@@ -885,22 +885,26 @@ def render_gen_step0_start(topic: str, target_date: str):
 
 
 def render_gen_step1_structure_review():
-    """Step 1: 구조 검토 - 한글 맥락 확인."""
+    """Step 1: 구조 검토 - 한글 맥락 확인 (레벨별/문장별 타겟 피드백 지원)."""
     st.subheader("📋 구조 검토 (한글 맥락)")
-    st.info("⚠️ 영어 생성 전에 한글 맥락을 확인하세요. 잘못된 정보가 있으면 피드백을 주세요.")
+    st.info("⚠️ 영어 생성 전에 한글 맥락을 확인하세요. 수정이 필요하면 해당 레벨에서 피드백을 입력하세요.")
 
     result = st.session_state.step2_result
     if not result:
         st.error("구조 설계 결과가 없습니다.")
         return
 
+    topic_data = st.session_state.planned_topics[st.session_state.current_topic_idx]
+    topic = topic_data["topic"]
+
     # 공통 상황
     st.markdown(f"**공통 상황:** {result.get('common_situation', '-')}")
 
-    # 레벨별 구조 표시
+    # 레벨별 구조 표시 + 개별 피드백
     levels = result.get("levels", {})
+    level_names = {"level_1": "Level 1 (2-3세)", "level_2": "Level 2 (3-5세)", "level_3": "Level 3 (4-6세)"}
 
-    for level_key, level_name in [("level_1", "Level 1 (2-3세)"), ("level_2", "Level 2 (3-5세)"), ("level_3", "Level 3 (4-6세)")]:
+    for level_key, level_name in level_names.items():
         level_data = levels.get(level_key, {})
 
         with st.expander(f"📖 {level_name}", expanded=True):
@@ -926,36 +930,95 @@ def render_gen_step1_structure_review():
 
             st.markdown(f"**학습 포인트:** {level_data.get('learning_point', '-')}")
 
+            # ===== 레벨별 피드백 섹션 =====
+            st.markdown("---")
+            st.markdown(f"##### 💬 {level_name.split(' ')[0]} {level_name.split(' ')[1]} 피드백")
+
+            # 문장 선택 체크박스
+            st.caption("수정할 문장 선택:")
+            sent_cols = st.columns(4)
+            with sent_cols[0]:
+                s1 = st.checkbox("1️⃣", key=f"struct_sent_{level_key}_1", value=False)
+            with sent_cols[1]:
+                s2 = st.checkbox("2️⃣", key=f"struct_sent_{level_key}_2", value=False)
+            with sent_cols[2]:
+                s3 = st.checkbox("3️⃣", key=f"struct_sent_{level_key}_3", value=False)
+            with sent_cols[3]:
+                all_sent = st.checkbox("전체", key=f"struct_sent_{level_key}_all", value=False)
+
+            # 피드백 입력
+            level_feedback = st.text_area(
+                "피드백 내용",
+                placeholder=f"예: 2번 문장의 맥락을 더 구체적으로 수정해주세요.",
+                key=f"struct_feedback_{level_key}",
+                height=80,
+                label_visibility="collapsed"
+            )
+
+            # 이 레벨만 재생성 버튼
+            if st.button(
+                f"🔄 {level_name.split('(')[0].strip()}만 재생성",
+                key=f"struct_regen_{level_key}",
+                disabled=not level_feedback.strip(),
+                use_container_width=True
+            ):
+                # 타겟 문장 결정
+                if all_sent:
+                    target_sentences = [1, 2, 3]
+                else:
+                    target_sentences = []
+                    if s1:
+                        target_sentences.append(1)
+                    if s2:
+                        target_sentences.append(2)
+                    if s3:
+                        target_sentences.append(3)
+
+                if not target_sentences:
+                    st.warning("⚠️ 수정할 문장을 선택하세요.")
+                else:
+                    with st.spinner(f"🟣 {level_name.split('(')[0].strip()} 재생성 중... (문장 {target_sentences})"):
+                        try:
+                            new_result = pipeline.step2_regenerate_targeted(
+                                topic=topic,
+                                existing_result=st.session_state.step2_result,
+                                target_level=level_key,
+                                feedback=level_feedback,
+                                target_sentences=target_sentences
+                            )
+                            st.session_state.step2_result = new_result
+                            st.success(f"✅ {level_name.split('(')[0].strip()} 재생성 완료!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"재생성 실패: {e}")
+
     st.divider()
 
-    # 피드백 입력
-    st.subheader("💬 피드백")
-    feedback = st.text_area(
-        "수정이 필요한 부분이 있으면 피드백을 입력하세요",
-        placeholder="예: Level 2의 '씹으면 이가 튼튼해진다'는 근거 없음. '비타민이 많아서 건강에 좋다'로 변경해주세요.",
-        height=100
-    )
+    # 전체 액션 버튼
+    st.subheader("📋 전체 액션")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        if st.button("← 이전"):
+        if st.button("← 이전", use_container_width=True):
             st.session_state.gen_step = 0
             st.rerun()
 
     with col2:
-        if st.button("🔄 피드백 반영 재생성", disabled=not feedback.strip()):
-            st.session_state.step2_feedback = feedback
-            st.session_state.gen_step = 0
-            st.rerun()
+        if st.button("🔄 전체 재생성", use_container_width=True, help="모든 레벨을 처음부터 재설계"):
+            with st.spinner("🟣 Claude가 전체 재설계 중..."):
+                try:
+                    new_result = pipeline.step2_structure(topic)
+                    st.session_state.step2_result = new_result
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"재생성 실패: {e}")
 
     with col3:
-        if st.button("✅ 승인 → 영어 생성", type="primary"):
-            st.session_state.step2_feedback = ""
+        if st.button("✅ 승인 → 영어 생성", type="primary", use_container_width=True):
             with st.spinner("🟣 Claude가 영어 문장을 생성하고 있어요..."):
                 try:
-                    topic_data = st.session_state.planned_topics[st.session_state.current_topic_idx]
-                    category = db_loader.categorize_topic(topic_data["topic"])
+                    category = db_loader.categorize_topic(topic)
                     result = pipeline.step3_generate(st.session_state.step2_result, category=category)
                     st.session_state.step3_result = result
                     st.session_state.gen_step = 2

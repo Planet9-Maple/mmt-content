@@ -835,6 +835,137 @@ def step4_review(
     return result
 
 
+def extract_must_fix_feedback(review_result: dict) -> dict:
+    """검수 결과에서 must_fix 항목을 추출하여 레벨별 피드백으로 변환.
+
+    Returns:
+        {
+            "level_1": {"has_issues": False, "feedback": "", "sentences": []},
+            "level_2": {"has_issues": True, "feedback": "...", "sentences": [1, 2]},
+            "level_3": {"has_issues": True, "feedback": "...", "sentences": [1]}
+        }
+    """
+    feedback_by_level = {}
+    review = review_result.get("review", {})
+
+    for level_key in ["level_1", "level_2", "level_3"]:
+        level_data = review.get(level_key, {})
+        variants = level_data.get("variants", {})
+
+        # 가장 많이 선택될 A 변형의 must_fix 확인
+        best_pick = level_data.get("best_pick", "A")
+        var_data = variants.get(best_pick, {})
+        must_fix_list = var_data.get("must_fix", [])
+
+        if must_fix_list:
+            # must_fix를 피드백 문자열로 변환
+            feedback_parts = []
+            sentences = set()
+
+            for fix in must_fix_list:
+                sentence_num = fix.get("sentence_num", 0)
+                problem = fix.get("problem", "")
+                original = fix.get("original", "")
+                fix_instruction = fix.get("fix_instruction", "")
+                suggested_fix = fix.get("suggested_fix", "")
+
+                sentences.add(sentence_num)
+
+                feedback_parts.append(
+                    f"[{sentence_num}번 문장] {problem}. "
+                    f"현재: \"{original}\" → 수정: {fix_instruction}"
+                    + (f" (예: \"{suggested_fix}\")" if suggested_fix else "")
+                )
+
+            feedback_by_level[level_key] = {
+                "has_issues": True,
+                "feedback": "\n".join(feedback_parts),
+                "sentences": list(sentences) if sentences else [1, 2, 3]
+            }
+        else:
+            feedback_by_level[level_key] = {
+                "has_issues": False,
+                "feedback": "",
+                "sentences": []
+            }
+
+    return feedback_by_level
+
+
+def step4_review_with_auto_fix(
+    structure: dict,
+    generated: dict,
+    category: Optional[str] = None,
+    df=None,
+    max_fix_attempts: int = 2
+) -> tuple[dict, dict, int]:
+    """검수 + 자동 수정 루프.
+
+    must_fix 항목이 있으면 자동으로 재생성하고 다시 검수합니다.
+    최대 max_fix_attempts 번까지 시도합니다.
+
+    Args:
+        structure: Step 2 구조 설계 결과
+        generated: Step 3 생성 결과
+        category: 카테고리
+        df: DB DataFrame
+        max_fix_attempts: 최대 수정 시도 횟수
+
+    Returns:
+        (최종 생성 결과, 최종 검수 결과, 수정 횟수)
+    """
+    current_generated = generated
+    fix_count = 0
+
+    for attempt in range(max_fix_attempts + 1):
+        # 검수 실행
+        review_result = step4_review(current_generated, category=category, df=df)
+
+        # must_fix 체크
+        overall = review_result.get("overall_recommendation", {})
+        auto_regen = overall.get("auto_regenerate_needed", False)
+
+        # must_fix 항목 추출
+        feedback_by_level = extract_must_fix_feedback(review_result)
+        has_any_must_fix = any(f["has_issues"] for f in feedback_by_level.values())
+
+        if not has_any_must_fix and not auto_regen:
+            # 수정 필요 없음 - 통과
+            logger.info(f"✅ 검수 통과 (수정 횟수: {fix_count})")
+            return current_generated, review_result, fix_count
+
+        if attempt >= max_fix_attempts:
+            # 최대 시도 도달 - 그냥 반환
+            logger.warning(f"⚠️ 최대 수정 시도({max_fix_attempts})에 도달. 현재 결과 반환")
+            return current_generated, review_result, fix_count
+
+        # 자동 수정 필요
+        fix_count += 1
+        logger.info(f"🔄 자동 수정 시작 (시도 {fix_count}/{max_fix_attempts})")
+
+        # 각 레벨별로 문제가 있는 것만 재생성
+        for level_key, level_feedback in feedback_by_level.items():
+            if level_feedback["has_issues"]:
+                logger.info(f"  - {level_key} 재생성: {level_feedback['feedback'][:50]}...")
+
+                try:
+                    current_generated = step3_regenerate_targeted(
+                        structure=structure,
+                        existing_result=current_generated,
+                        target_level=level_key,
+                        feedback=level_feedback["feedback"],
+                        target_sentences=level_feedback["sentences"],
+                        preserve_variant="A",  # 일단 A 기준
+                        category=category,
+                        df=df
+                    )
+                except Exception as e:
+                    logger.error(f"  - {level_key} 재생성 실패: {e}")
+                    continue
+
+    return current_generated, review_result, fix_count
+
+
 # ============================================================
 # 전체 파이프라인 실행
 # ============================================================

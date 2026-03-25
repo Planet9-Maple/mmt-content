@@ -1015,21 +1015,33 @@ def render_gen_step1_structure_review():
 
     with col3:
         if st.button("✅ 승인 → 영어 생성 + AI 검수", type="primary", use_container_width=True):
+            category = db_loader.categorize_topic(topic)
+
             # Step 1: 영어 생성
             with st.spinner("🟣 Claude가 영어 문장을 생성하고 있어요..."):
                 try:
-                    category = db_loader.categorize_topic(topic)
                     gen_result = pipeline.step3_generate(st.session_state.step2_result, category=category)
-                    st.session_state.step3_result = gen_result
                 except Exception as e:
                     st.error(f"영어 생성 실패: {e}")
                     return
 
-            # Step 2: AI 검수 (자동 실행)
-            with st.spinner("🟢 GPT가 품질을 검수하고 있어요..."):
+            # Step 2: AI 검수 + 자동 수정 루프
+            with st.spinner("🟢 GPT가 품질을 검수하고 있어요... (문제 발견 시 자동 수정)"):
                 try:
-                    review_result = pipeline.step4_review(gen_result, category=category)
+                    # 자동 수정 루프 사용 (최대 2회 시도)
+                    final_gen, review_result, fix_count = pipeline.step4_review_with_auto_fix(
+                        structure=st.session_state.step2_result,
+                        generated=gen_result,
+                        category=category,
+                        max_fix_attempts=2
+                    )
+
+                    st.session_state.step3_result = final_gen
                     st.session_state.step4_result = review_result
+
+                    # 자동 수정 횟수 표시
+                    if fix_count > 0:
+                        st.toast(f"🔄 AI가 {fix_count}회 자동 수정 후 검수 완료!")
 
                     # GPT 추천안으로 기본 선택 설정
                     best_combo = review_result.get("overall_recommendation", {}).get("best_combination", {})
@@ -1135,10 +1147,28 @@ def render_gen_step2_content_with_review():
             # 콘텐츠 표시
             st.code(admin_text, language=None)
 
-            # 이슈 표시 (있으면)
+            # must_fix 표시 (있으면 - 반드시 수정 필요)
+            must_fix_list = var_review.get("must_fix", [])
+            if must_fix_list:
+                st.error(f"🚨 **반드시 수정 필요** ({len(must_fix_list)}개)")
+                for fix in must_fix_list:
+                    sentence_num = fix.get("sentence_num", "?")
+                    problem = fix.get("problem", "")
+                    original = fix.get("original", "")
+                    fix_instruction = fix.get("fix_instruction", "")
+                    suggested = fix.get("suggested_fix", "")
+
+                    st.markdown(f"""
+                    **{sentence_num}번 문장**: {problem}
+                    - 현재: `{original}`
+                    - 수정: {fix_instruction}
+                    {f'- 예시: `{suggested}`' if suggested else ''}
+                    """)
+
+            # 일반 이슈 표시 (있으면)
             issues = var_review.get("issues", [])
             if issues:
-                with st.expander(f"⚠️ 검수 이슈 ({len(issues)}개)", expanded=False):
+                with st.expander(f"⚠️ 기타 검수 이슈 ({len(issues)}개)", expanded=False):
                     for issue in issues:
                         if isinstance(issue, dict):
                             severity = issue.get("severity", "minor")
@@ -1251,29 +1281,34 @@ def render_gen_step2_content_with_review():
             st.rerun()
 
     with col2:
-        # 전체 재생성 + 재검수
-        if st.button("🔄 전체 재생성 + 재검수", use_container_width=True, help="모든 레벨을 처음부터 재생성 후 재검수"):
-            # 1. 전체 재생성
-            with st.spinner("🟣 Claude가 전체 재생성 중..."):
+        # 전체 재생성 + 재검수 (자동 수정 루프 포함)
+        if st.button("🔄 전체 재생성 + 재검수", use_container_width=True, help="모든 레벨을 처음부터 재생성 후 자동 수정 루프 실행"):
+            with st.spinner("🟣 Claude가 재생성 중... 🟢 GPT 검수 + 자동 수정"):
                 try:
+                    # 1. 전체 재생성
                     new_gen_result = pipeline.step3_generate(
                         st.session_state.step2_result,
                         category=category
                     )
-                    st.session_state.step3_result = new_gen_result
-                except Exception as e:
-                    st.error(f"재생성 실패: {e}")
-                    return
 
-            # 2. 전체 재검수
-            with st.spinner("🟢 GPT가 재검수하고 있어요..."):
-                try:
-                    new_review_result = pipeline.step4_review(new_gen_result, category=category)
+                    # 2. 검수 + 자동 수정 루프
+                    final_gen, new_review_result, fix_count = pipeline.step4_review_with_auto_fix(
+                        structure=st.session_state.step2_result,
+                        generated=new_gen_result,
+                        category=category,
+                        max_fix_attempts=2
+                    )
+
+                    st.session_state.step3_result = final_gen
                     st.session_state.step4_result = new_review_result
-                    st.success("✅ 전체 재생성 + 재검수 완료!")
+
+                    if fix_count > 0:
+                        st.success(f"✅ 전체 재생성 + 자동 수정 {fix_count}회 후 완료!")
+                    else:
+                        st.success("✅ 전체 재생성 + 재검수 완료!")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"재검수 실패: {e}")
+                    st.error(f"재생성/재검수 실패: {e}")
 
     with col3:
         if st.button("✅ 승인 → 최종 확정", type="primary", use_container_width=True):

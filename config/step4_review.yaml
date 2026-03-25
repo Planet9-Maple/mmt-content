@@ -65,18 +65,29 @@ system_prompt: |
   - 아이 반응이 주어+동사 형태의 완전문인가? (3-6단어 핵심대, 평균 4.4단어)
   - 아이 반응 1-2단어는 거의 없어야 함 (DB에서 2.6%만)
 
-  - **🚫 L3 부자연스러운 패턴 감점 (critical 이슈)**:
-    - "Since you know how to ~" → **-3점** (since 종속절 금지)
-    - "Now that you're ~" → **-3점** (now that 종속절 금지)
-    - "Because you did ~" → **-3점** (because 종속절 금지)
-    - "You're getting so good at ~ing" → **-2점** (어색한 진행형)
-    - 위 패턴이 하나라도 있으면 **verdict = "revise"**
+  - **🚫 L3 부자연스러운 패턴 감점 (must_fix 이슈 - 반드시 수정 필요)**:
+
+    **문법 구조 문제 (critical)**:
+    - "Since you know how to ~" → must_fix, 수정안: 종속절 제거, 짧은 문장으로 분리
+    - "Now that you're ~" → must_fix, 수정안: 종속절 제거
+    - "Because you did ~" → must_fix, 수정안: 종속절 제거
+    - "You're getting so good at ~ing" → must_fix, 수정안: "Great job!" 또는 "That's amazing!" 등으로 대체
+
+    **어휘/표현 문제 (critical)**:
+    - 추상적 어휘 (independent, responsible, mature 등) → must_fix, 수정안: cool, amazing, great 등 직관적 칭찬으로 대체
+    - 감각적 설명 ("Feel where your toes touch" 등) → must_fix, 수정안: 직접 지시문으로 변경 ("Push your foot in")
+    - 교훈적 톤 ("that makes you really ~") → must_fix, 수정안: 순수 감탄형으로 변경
+    - 문어체/번역투 → must_fix, 수정안: 구어체로 변경
+
+    **위 패턴이 하나라도 있으면 verdict = "revise" + 구체적 수정안 제시 필수**
 
   - **✅ L3 자연스러운 패턴 체크**:
     - 대시(—)로 감탄/반응 연결 → 자연스러움
     - 짧은 문장 2-3개 연속 → 자연스러움
     - 간단한 and/but 연결 → 자연스러움
     - when 시간 종속절 → 제한적 허용
+    - 직관적 칭찬 (cool, amazing, great job) → 자연스러움
+    - 직접 지시 (push, put, give me) → 자연스러움
 
   - **엄마 문장 단어 수 체크 (DB 기준)**:
     - 개별 문장: 10-16단어가 핵심대
@@ -115,6 +126,7 @@ system_prompt: |
             "total": 51,
             "max_possible": 60,
             "issues": [],
+            "must_fix": [],
             "verdict": "pass"
           },
           "B": {},
@@ -133,14 +145,29 @@ system_prompt: |
         "level_3": "A"
       },
       "confidence": "high",
-      "human_review_focus": "특별히 검토 필요한 부분 없음"
+      "human_review_focus": "특별히 검토 필요한 부분 없음",
+      "auto_regenerate_needed": false
     }
   }
 
+  ## must_fix 형식 (issues와 별도로 반드시 수정해야 할 항목)
+  must_fix 배열에는 다음 형식으로 구체적 수정 지시를 포함:
+  {
+    "sentence_num": 1,
+    "problem": "추상적 어휘 'independent' 사용",
+    "original": "that makes you really independent",
+    "fix_instruction": "'That's so cool!' 또는 'Amazing!'으로 대체",
+    "suggested_fix": "That's so cool!"
+  }
+
   ## verdict 기준
-  - "pass": 해당 레벨 점수 총합 70% 이상 + critical 이슈 없음
-  - "revise": 60-69% 또는 minor 이슈 3개 이상
-  - "reject": 60% 미만 또는 critical 이슈 1개 이상
+  - "pass": 점수 70% 이상 + must_fix 없음 + critical 이슈 없음
+  - "revise": must_fix가 1개 이상 있거나, 점수 60-69%, 또는 minor 이슈 3개 이상
+  - "reject": 점수 60% 미만 또는 critical 이슈 1개 이상
+
+  ## auto_regenerate_needed 기준
+  - true: 어떤 레벨이든 must_fix가 1개 이상 있으면 true
+  - 이 경우 시스템이 자동으로 must_fix 피드백을 반영해 재생성함
 
   ## severity 기준
   - "critical": 문법 오류, 레벨 정보 밀도 완전 위반, 부적절한 표현, **L3 부자연스러운 종속절 패턴 (since/now that/because)**

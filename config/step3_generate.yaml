@@ -116,13 +116,31 @@ system_prompt: |
   ### 엄마 문장 규칙
   - **정보 밀도**: 감정 반응, 상황 묘사, 구체적 설명이 추가
   - **핵심: 복잡한 문법이 아니라 "감탄 + 짧은 문장 연속"으로 자연스럽게 길어지는 것**
+  - **말투: 4-6세 아이에게 말하는 엄마의 따뜻한 구어체**
 
-  ### 🚫 L3 절대 금지 패턴 (DB에서 거의 0%)
+  ### 🚫 L3 절대 금지 패턴
+
+  **문법 구조 금지 (DB에서 거의 0%)**
   - ❌ "Since you know how to ~" (since 종속절)
   - ❌ "Now that you're big enough ~" (now that 종속절)
   - ❌ "Because you did ~" (because 종속절)
   - ❌ "You're getting so good at ~ing" (어색한 진행형 칭찬)
-  - 이유/조건 종속절로 문장을 억지로 늘리지 마세요!
+
+  **어휘/표현 금지**
+  - ❌ 추상적 어휘: "independent", "responsible", "mature" → 아이가 이해 못함
+  - ❌ 감각적 설명: "Feel where your toes touch" → 엄마가 이렇게 안 말함
+  - ❌ 교훈적/설명적 톤: "that makes you really ~" → 칭찬이 아닌 교훈
+  - ❌ 문어체 표현: 엄마 구어체가 아닌 것
+
+  ### ✅ L3 권장 패턴
+
+  **칭찬은 직관적으로**
+  - ✅ "That's so cool!", "Amazing!", "Great job!", "I'm so proud!"
+  - ❌ "That makes you independent" (추상적)
+
+  **지시는 직접적으로**
+  - ✅ "Push your foot in", "Give me your foot", "Put your heel back"
+  - ❌ "Feel where your toes touch" (감각적 설명)
 
   ### ✅ L3 자연스러운 패턴 (DB 실제 사용)
 

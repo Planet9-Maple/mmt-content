@@ -111,28 +111,53 @@ system_prompt: |
 
   ---
 
-  ## 레벨 3 (4-6세) — "상황 묘사·이유·조건이 풍부해진 것"
+  ## 레벨 3 (4-6세) — "감정·반응·구체성이 풍부해진 것"
 
   ### 엄마 문장 규칙
-  - **정보 밀도**: 이유, 상황 묘사, 조건, 감정의 깊이가 추가
-  - **핵심: 어휘가 어려워지는 것이 아니라, 문장 구조·길이·표현의 층위가 풍부해지는 것**
+  - **정보 밀도**: 감정 반응, 상황 묘사, 구체적 설명이 추가
+  - **핵심: 복잡한 문법이 아니라 "감탄 + 짧은 문장 연속"으로 자연스럽게 길어지는 것**
 
-  ### 단어 수 가이드라인 (DB 기반 - 반드시 준수)
+  ### 🚫 L3 절대 금지 패턴 (DB에서 거의 0%)
+  - ❌ "Since you know how to ~" (since 종속절)
+  - ❌ "Now that you're big enough ~" (now that 종속절)
+  - ❌ "Because you did ~" (because 종속절)
+  - ❌ "You're getting so good at ~ing" (어색한 진행형 칭찬)
+  - 이유/조건 종속절로 문장을 억지로 늘리지 마세요!
+
+  ### ✅ L3 자연스러운 패턴 (DB 실제 사용)
+
+  **패턴 1: 대시(—)로 감탄/반응 연결 (39.7%)**
+  - "Come give me a big hug—wow, you're so warm."
+  - "You did such a great job—your room looks so clean now!"
+  - "Wow! You did this by yourself—that's amazing."
+
+  **패턴 2: 짧은 문장 2-3개 연속 (가장 자연스러움)**
+  - "Good morning, my love. Did you sleep well last night?"
+  - "Oh no, it fell over! That's okay—we can try again together."
+  - "I'll cut it into small pieces. How about this size?"
+
+  **패턴 3: 간단한 and/but 연결**
+  - "Let's head to the kitchen and get some breakfast."
+  - "I know you want to keep playing, but it's really time for bed now."
+
+  **패턴 4: when만 제한적 허용 (14%)**
+  - "When you're done eating, we can play together."
+
+  ### 단어 수 가이드라인 (DB 기반)
   - 개별 문장: **10-16단어**가 핵심대 (72%)
   - **3문장 합계: 38-48단어** (평균 42단어)
-  - 평균: **14.1단어/문장**
   - ⚠️ 3문장 합계 35단어 이하 = L2 수준으로 너무 짧음
 
-  ### ✅ L3 좋은 예시 (DB 기반)
+  ### ✅ L3 좋은 예시 (DB 기반 - 자연스러운 구어체)
   - "It's cleanup time! Let's put all your toys back where they belong." (14w)
-  - "I know you want to keep playing, but it's really time for bed now." (15w)
-  - "Let's wash your hair now. I'll be careful so it won't get in your eyes." (16w)
   - "What are you drawing? Tell me about your picture." (9w)
-  - "Okay, you can have ten more minutes, but then we'll clean up and get ready for sleep—deal?" (19w)
+  - "Ready or not, here I come! Where could you be?" (10w)
+  - "Wow! You did this by yourself—that's amazing." (7w)
+  - "I'll be careful so it won't get in your eyes. Hold still for me." (13w)
 
-  ### ✅ L2 → L3 확장 패턴
-  - L2: "Dinner's almost ready now." → L3: "Dinner's almost ready, sweetie—just a few more minutes!" (애칭 + 구체적 시간)
-  - L2: "We're leaving in ten minutes, okay?" → L3: "We're heading out in ten minutes, so let's start getting ready." (이유 + 행동 유도)
+  ### ✅ L2 → L3 확장 패턴 (자연스러운 방식)
+  - L2: "Dinner's almost ready now." → L3: "Dinner's almost ready, sweetie—just a few more minutes!" (대시 + 구체적 시간)
+  - L2: "Let's put on your shoes." → L3: "Let's put on your shoes! You can do the straps by yourself now." (짧은 문장 연속)
 
   ### 아이 반응 (항상 2세트)
   - 문법적으로 완전한 문장. 주어+동사 형태.

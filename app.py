@@ -635,10 +635,19 @@ def render_topic_list():
     topics = st.session_state.planned_topics
 
     # 콘텐츠 수 계산 (복습일 제외)
-    content_count = sum(1 for t in topics if not t.get("is_review", False))
+    content_topics = [t for t in topics if not t.get("is_review", False)]
+    content_count = len(content_topics)
+    completed_count = sum(1 for t in content_topics if t.get("status") == "completed")
     review_count = sum(1 for t in topics if t.get("is_review", False))
 
-    st.caption(f"콘텐츠 {content_count}일 + 복습 {review_count}일 = 총 {len(topics)}일")
+    # 진행률 표시
+    col_info1, col_info2 = st.columns([2, 1])
+    with col_info1:
+        st.caption(f"콘텐츠 {content_count}일 + 복습 {review_count}일 = 총 {len(topics)}일")
+    with col_info2:
+        if content_count > 0:
+            progress = completed_count / content_count
+            st.progress(progress, text=f"✅ 완료: {completed_count}/{content_count}")
 
     # 상태별 필터
     filter_status = st.radio(
@@ -681,6 +690,9 @@ def render_topic_list():
             if is_review:
                 # 복습일은 수정 불가
                 st.markdown(f"📚 **복습** *(별도 제작)*")
+            elif topic["status"] == "completed":
+                # 완료된 주제는 수정 불가, 눈에 띄게 표시
+                st.markdown(f"~~{topic['topic']}~~ ✅ **완료**")
             else:
                 # suggestions가 있으면 드롭다운 + 직접입력 옵션
                 suggestions = topic.get("suggestions", [])
@@ -740,7 +752,10 @@ def render_topic_list():
             if is_review:
                 # 복습일은 생성 버튼 없음
                 st.caption("복습")
-            elif topic["status"] != "completed":
+            elif topic["status"] == "completed":
+                # 완료된 항목
+                st.success("완료", icon="✅")
+            else:
                 if st.button("생성", key=f"gen_{idx}", type="primary"):
                     # 현재 입력된 주제 값 저장 (위젯에서 직접 읽기)
                     if f"topic_{idx}" in st.session_state:

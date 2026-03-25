@@ -70,6 +70,20 @@ system_prompt: |
   - **정보 밀도**: L1의 핵심 행동에 감정, 확인, 구체적 방법이 1-2개 추가
   - L1이 "뭘 하자"라면, L2는 "뭘 하자 + 어떻게/왜/좋지?"
 
+  ### 단어 수 가이드라인 (DB 기반 - 반드시 준수)
+  - 개별 문장: **7-12단어**가 핵심대 (72%)
+  - **3문장 합계: 25-35단어** (평균 30단어)
+  - 평균: **10.1단어/문장**
+  - ⚠️ 3문장 합계 22단어 이하 = L1 수준으로 너무 짧음
+  - ⚠️ 3문장 합계 40단어 이상 = L3 수준으로 너무 김
+
+  ### ✅ L2 좋은 예시 (DB 기반)
+  - "It's cleanup time! Let's put the toys back where they belong." (13w)
+  - "Your hands are freezing—it was so cold outside." (9w)
+  - "Let's dry your hair now, or you might catch a cold." (12w)
+  - "Where's your coat? Can you go get it and put it on?" (13w)
+  - "Almost done—just stay still for a little bit." (9w)
+
   ### ✅ L1 → L2 확장 패턴
   - L1: "Dinner's almost ready." → L2: "Dinner's almost ready now." (시간 부사 추가)
   - L1: "Can you set the spoons?" → L2: "Can you put the spoons out for me?" (구체적 방법 + 관계)
@@ -103,6 +117,19 @@ system_prompt: |
   - **정보 밀도**: 이유, 상황 묘사, 조건, 감정의 깊이가 추가
   - **핵심: 어휘가 어려워지는 것이 아니라, 문장 구조·길이·표현의 층위가 풍부해지는 것**
 
+  ### 단어 수 가이드라인 (DB 기반 - 반드시 준수)
+  - 개별 문장: **10-16단어**가 핵심대 (72%)
+  - **3문장 합계: 38-48단어** (평균 42단어)
+  - 평균: **14.1단어/문장**
+  - ⚠️ 3문장 합계 35단어 이하 = L2 수준으로 너무 짧음
+
+  ### ✅ L3 좋은 예시 (DB 기반)
+  - "It's cleanup time! Let's put all your toys back where they belong." (14w)
+  - "I know you want to keep playing, but it's really time for bed now." (15w)
+  - "Let's wash your hair now. I'll be careful so it won't get in your eyes." (16w)
+  - "What are you drawing? Tell me about your picture." (9w)
+  - "Okay, you can have ten more minutes, but then we'll clean up and get ready for sleep—deal?" (19w)
+
   ### ✅ L2 → L3 확장 패턴
   - L2: "Dinner's almost ready now." → L3: "Dinner's almost ready, sweetie—just a few more minutes!" (애칭 + 구체적 시간)
   - L2: "We're leaving in ten minutes, okay?" → L3: "We're heading out in ten minutes, so let's start getting ready." (이유 + 행동 유도)
@@ -110,11 +137,13 @@ system_prompt: |
   ### 아이 반응 (항상 2세트)
   - 문법적으로 완전한 문장. 주어+동사 형태.
   - 조동사(can, will), to부정사(want to), 의문문(Can we~?) 자유.
+  - 평균 **4.4단어** (3-6단어 핵심대가 94%)
 
-  **L3 아이 반응 패턴**
-  - 3-4단어 (58%): "My coat is right here!" "I'll stay still."
-  - 5-6단어 (30%): "Did you sleep well, Mommy?" "I want to read this one!"
+  **L3 아이 반응 패턴 (DB 기반)**
+  - 3-4단어 (57%): "My coat is right here!" "I'll stay still." "This toy goes here!"
+  - 5-6단어 (37%): "Did you sleep well, Mommy?" "I want to read this one!" "Can you put the toys in too?"
   - 핵심: "아이가 실제로 하는 말"이 아니라 "이 나이에 가르쳐야 하는 문법적으로 완전한 미니 문장"
+  - ⚠️ 1-2단어 반응은 L3에서 거의 없음 (2.6%만)
 
   ---
 

@@ -1,0 +1,32 @@
+# 환경 변수 (API 키)
+.env
+.env.local
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.eggs/
+*.egg-info/
+*.egg
+
+# 가상환경
+venv/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 출력 파일 (선택적으로 커밋)
+# output/
+
+# OS
+.DS_Store
+Thumbs.db

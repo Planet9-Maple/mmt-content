@@ -1,0 +1,17 @@
+# 마미톡잉글리시 콘텐츠 파이프라인 의존성
+
+# API 클라이언트 (3개 프로바이더)
+anthropic>=0.18.0
+openai>=1.12.0
+google-generativeai>=0.4.0
+
+# 데이터 처리
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# 설정
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# UI (Streamlit)
+streamlit>=1.31.0

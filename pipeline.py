@@ -110,7 +110,8 @@ def call_gemini(
         "generationConfig": {
             "temperature": temperature,
             "maxOutputTokens": max_tokens,
-            "responseMimeType": "application/json"
+            "responseMimeType": "application/json",
+            "thinkingConfig": {"thinkingBudget": 0}  # thinking 비활성화
         }
     }
 
@@ -231,12 +232,50 @@ def extract_json(text: str) -> dict:
         # 전체 텍스트가 JSON인 경우
         json_str = text.strip()
 
+    # JSON 파싱 시도
     try:
         return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+
+    # 파싱 실패 시: 문자열 내 줄바꿈을 이스케이프 처리
+    try:
+        # JSON 문자열 내부의 실제 줄바꿈을 \n으로 변환
+        fixed = re.sub(
+            r'(?<=["\'])\s*\n\s*(?=["\'])|(?<=:)\s*"([^"]*)"',
+            lambda m: m.group(0).replace('\n', '\\n') if m.group(0) else m.group(0),
+            json_str
+        )
+        # 문자열 값 내부의 줄바꿈 처리
+        def fix_string_newlines(match):
+            content = match.group(1)
+            fixed_content = content.replace('\n', '\\n').replace('\r', '\\r')
+            return f'"{fixed_content}"'
+
+        fixed = re.sub(r'"((?:[^"\\]|\\.)*)(?:\n)((?:[^"\\]|\\.)*)"',
+                       lambda m: f'"{m.group(1)}\\n{m.group(2)}"', json_str)
+
+        # 여러 번 반복 적용
+        for _ in range(5):
+            prev = fixed
+            fixed = re.sub(r'"((?:[^"\\]|\\.)*)(?:\n)((?:[^"\\]|\\.)*)"',
+                          lambda m: f'"{m.group(1)}\\n{m.group(2)}"', fixed)
+            if prev == fixed:
+                break
+
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+
+    # 최후의 수단: { } 사이의 내용만 추출
+    try:
+        brace_match = re.search(r'\{[\s\S]*\}', json_str)
+        if brace_match:
+            return json.loads(brace_match.group(0))
     except json.JSONDecodeError as e:
         logger.error(f"JSON 파싱 실패: {e}")
         logger.error(f"원본 텍스트: {text[:500]}...")
-        raise
+        raise ValueError(f"JSON 파싱 실패: {e}")
 
 
 # ============================================================

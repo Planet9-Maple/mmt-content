@@ -79,7 +79,14 @@ def main():
         st.session_state.app_mode = "create" if "생성" in mode else "manage"
 
         st.divider()
-        st.caption("🤖 Gemini → Claude → GPT")
+        st.caption("🤖 AI 파이프라인")
+        st.markdown("""
+        <small>
+        1️⃣ 🔵 <b>Gemini</b> - 주제 제안/분석<br>
+        2️⃣ 🟣 <b>Claude</b> - 영어 문장 생성<br>
+        3️⃣ 🟢 <b>GPT</b> - 품질 검수
+        </small>
+        """, unsafe_allow_html=True)
 
     # 메인 영역
     if st.session_state.app_mode == "manage":

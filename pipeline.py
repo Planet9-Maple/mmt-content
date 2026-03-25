@@ -89,26 +89,43 @@ def call_gemini(
     temperature: float = 0.5,
     max_tokens: int = 4000
 ) -> str:
-    """Google Gemini API 호출 (Step 0, 1)."""
-    import google.generativeai as genai
+    """Google Gemini API 호출 (Step 0, 1) - REST API 직접 호출."""
+    import requests
 
-    genai.configure(api_key=get_api_key("GOOGLE_API_KEY"))
+    api_key = get_api_key("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY가 설정되지 않았습니다.")
 
     logger.info(f"{PROVIDER_EMOJI['gemini']} Gemini API 호출: {model}, temp={temperature}")
 
-    gen_model = genai.GenerativeModel(
-        model_name=model,
-        system_instruction=system_prompt
-    )
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
-    response = gen_model.generate_content(
-        user_message,
-        generation_config=genai.GenerationConfig(
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-            response_mime_type="application/json"
-        )
-    )
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": f"{system_prompt}\n\n---\n\n{user_message}"}]
+            }
+        ],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+            "responseMimeType": "application/json"
+        }
+    }
+
+    response = requests.post(url, json=payload, timeout=120)
+    response.raise_for_status()
+
+    result = response.json()
+    text = result["candidates"][0]["content"]["parts"][0]["text"]
+
+    # 토큰 사용량 로깅
+    if "usageMetadata" in result:
+        usage = result["usageMetadata"]
+        logger.info(f"토큰 사용: input={usage.get('promptTokenCount', 0)}, output={usage.get('candidatesTokenCount', 0)}")
+
+    return text
 
     # 토큰 사용량 로깅
     if hasattr(response, 'usage_metadata'):

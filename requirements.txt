@@ -3,7 +3,7 @@
 # API 클라이언트 (3개 프로바이더)
 anthropic>=0.18.0
 openai>=1.12.0
-google-generativeai>=0.4.0
+requests>=2.31.0
 
 # 데이터 처리
 pandas>=2.0.0

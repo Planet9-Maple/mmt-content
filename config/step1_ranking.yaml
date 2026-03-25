@@ -2,7 +2,7 @@
 # 프로바이더: Google Gemini (Step 0과 동일 모델로 컨텍스트 재사용)
 
 provider: "gemini"
-model: "gemini-1.5-flash"
+model: "gemini-2.5-flash"
 temperature: 0.2
 max_tokens: 1500
 

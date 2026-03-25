@@ -510,6 +510,145 @@ def step3_generate(
     return result
 
 
+def step3_regenerate_targeted(
+    structure: dict,
+    existing_result: dict,
+    target_level: str,
+    feedback: str,
+    target_sentences: list,
+    preserve_variant: str = "A",
+    category: Optional[str] = None,
+    df=None
+) -> dict:
+    """Step 3 타겟 재생성: 특정 레벨의 특정 문장만 수정.
+
+    Args:
+        structure: Step 2 구조 설계 결과
+        existing_result: 기존 Step 3 생성 결과
+        target_level: 수정할 레벨 ("level_1", "level_2", "level_3")
+        feedback: 사용자 피드백
+        target_sentences: 수정할 문장 번호 리스트 [1], [2], [1,2], [1,2,3] 등
+        preserve_variant: 기준이 되는 변형 ("A", "B", "C")
+        category: 주제 카테고리
+        df: DB 데이터프레임
+
+    Returns:
+        수정된 결과 (다른 레벨은 기존 유지)
+    """
+    logger.info("=" * 50)
+    logger.info(f"Step 3 타겟 재생성: {target_level}, 문장 {target_sentences}")
+
+    config = load_config(3)
+
+    # 기존 콘텐츠 가져오기
+    existing_levels = existing_result.get("levels", {})
+    existing_level_data = existing_levels.get(target_level, {})
+    existing_variants = existing_level_data.get("variants", {})
+    existing_variant = existing_variants.get(preserve_variant, {})
+    existing_admin_text = existing_variant.get("admin_text", "")
+
+    # 레벨 번호 추출
+    level_num = target_level[-1]  # "level_1" -> "1"
+
+    # 수정 대상 vs 유지 대상 결정
+    all_sentences = [1, 2, 3]
+    if not target_sentences or set(target_sentences) == set(all_sentences):
+        # 전체 재생성
+        preserve_sentences = []
+        target_instruction = f"레벨 {level_num}의 모든 문장을 피드백에 따라 재생성하세요."
+    else:
+        # 부분 재생성
+        preserve_sentences = [i for i in all_sentences if i not in target_sentences]
+        target_instruction = f"""## 타겟 수정 지시
+- 수정 대상 문장: {target_sentences}번
+- 유지할 문장: {preserve_sentences}번 (절대 변경 금지!)
+- 수정된 문장은 앞뒤 문장과 자연스럽게 연결되어야 합니다.
+- 한국어 번역도 동일한 원칙을 적용하세요."""
+
+    # 타겟 재생성 전용 시스템 프롬프트
+    targeted_system_prompt = f"""{config["system_prompt"]}
+
+---
+
+## 타겟 재생성 모드
+
+당신은 기존 콘텐츠의 **특정 부분만** 수정합니다.
+
+### 핵심 규칙
+1. **지정된 문장만 수정**: 피드백에서 지정한 문장 번호만 수정합니다.
+2. **문맥 유지**: 앞뒤 문장과의 자연스러운 흐름을 유지해야 합니다.
+3. **다른 부분 절대 변경 금지**: 지정되지 않은 문장은 한 글자도 바꾸지 마세요.
+4. **아이 반응**: 피드백에서 언급하지 않으면 기존 그대로 유지합니다.
+"""
+
+    # 사용자 메시지 구성
+    user_message = f"""## 수정 대상 레벨: {target_level} (Level {level_num})
+
+## 기존 콘텐츠 ({preserve_variant}안)
+```
+{existing_admin_text}
+```
+
+## 피드백
+{feedback}
+
+{target_instruction}
+
+## Step 2 설계도 (해당 레벨만 참고)
+```json
+{json.dumps(structure.get("levels", {}).get(target_level, {}), ensure_ascii=False, indent=2)}
+```
+
+## 출력 형식
+수정된 {target_level}의 A/B/C 3안을 JSON으로 출력하세요.
+- 지정된 문장만 수정하고, 나머지는 기존 내용 그대로 유지
+- 다른 레벨은 출력하지 마세요
+
+{{
+  "levels": {{
+    "{target_level}": {{
+      "variants": {{
+        "A": {{
+          "admin_text": "...",
+          "mom_en": ["...", "...", "..."],
+          "mom_kr": ["...", "...", "..."],
+          ...
+        }},
+        "B": {{ ... }},
+        "C": {{ ... }}
+      }}
+    }}
+  }}
+}}
+"""
+
+    response = call_api(3, targeted_system_prompt, user_message, config)
+    regenerated = extract_json(response)
+
+    # 결과 병합: 다른 레벨은 기존 유지
+    final_result = {
+        "topic": existing_result.get("topic", ""),
+        "levels": {}
+    }
+
+    for level_key in ["level_1", "level_2", "level_3"]:
+        if level_key == target_level:
+            # 재생성된 레벨 사용
+            new_level_data = regenerated.get("levels", {}).get(target_level, {})
+            if new_level_data:
+                final_result["levels"][level_key] = new_level_data
+            else:
+                # 재생성 실패 시 기존 유지
+                final_result["levels"][level_key] = existing_levels.get(level_key, {})
+        else:
+            # 기존 레벨 유지
+            final_result["levels"][level_key] = existing_levels.get(level_key, {})
+
+    logger.info(f"Step 3 타겟 재생성 완료: {target_level}")
+
+    return final_result
+
+
 # ============================================================
 # Step 4: 검수 (GPT - 크로스 프로바이더)
 # ============================================================

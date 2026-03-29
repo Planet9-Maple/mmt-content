@@ -127,6 +127,21 @@ def append_content(
 
         # 현재 행 수 (다음 번호 계산)
         all_values = worksheet.get_all_values()
+
+        # 중복 체크: 같은 날짜의 콘텐츠가 이미 있으면 저장하지 않음
+        for row in all_values[1:]:  # 헤더 제외
+            if len(row) > 1 and row[1] == target_date:
+                # 이미 해당 날짜에 콘텐츠 존재
+                existing_no = row[0] if row else "?"
+                return {
+                    'success': True,
+                    'row': all_values.index(row) + 1,
+                    'no': existing_no,
+                    'url': spreadsheet.url,
+                    'duplicate': True,
+                    'message': f'이미 {target_date} 날짜에 콘텐츠가 존재합니다 (No.{existing_no})'
+                }
+
         next_row = len(all_values) + 1
         next_no = len(all_values)  # 헤더 제외
 

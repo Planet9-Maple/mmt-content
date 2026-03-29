@@ -835,8 +835,129 @@ def step4_review(
     return result
 
 
-def extract_must_fix_feedback(review_result: dict) -> dict:
+def detect_chopped_sentences(text: str) -> list[dict]:
+    """한 줄에서 Chopped Sentences 패턴을 탐지합니다.
+
+    Chopped Sentences: 한 줄 내에 1-3단어짜리 파편 문장 2개가 이어붙여진 것
+    예: "Look! No more rain!" (1w + 3w), "Open the window. So fresh!" (3w + 2w)
+
+    Returns:
+        [{"original": "Look! No more rain!", "pattern": "1w + 3w"}]
+    """
+    issues = []
+
+    # 한 줄에서 문장 분리 (마침표, 느낌표, 물음표 기준)
+    # 대문자로 시작하는 문장 패턴 찾기
+    sentence_pattern = re.compile(r'([A-Z][^.!?]*[.!?])')
+    sentences = sentence_pattern.findall(text)
+
+    if len(sentences) >= 2:
+        # 연속된 두 문장의 단어 수 체크
+        for i in range(len(sentences) - 1):
+            s1 = sentences[i].strip()
+            s2 = sentences[i + 1].strip()
+
+            w1 = len(s1.split())
+            w2 = len(s2.split())
+
+            # 둘 다 4단어 미만이면 Chopped Sentences
+            if w1 < 4 and w2 < 4:
+                issues.append({
+                    "original": f"{s1} {s2}",
+                    "pattern": f"{w1}w + {w2}w",
+                    "s1": s1,
+                    "s2": s2
+                })
+
+    return issues
+
+
+def detect_l1_issues(generated_result: dict) -> dict:
+    """L1 콘텐츠에서 자동으로 문제를 탐지합니다.
+
+    탐지 항목:
+    1. Chopped Sentences
+    2. 질문(?) 0개
+    3. 총 단어 수 부족
+    4. 느낌표만 있는 경우
+
+    Returns:
+        {"has_issues": bool, "feedback": str, "sentences": list}
+    """
+    issues = []
+    sentences_to_fix = set()
+
+    level_1 = generated_result.get("levels", {}).get("level_1", {})
+    variants = level_1.get("variants", {})
+
+    # A 변형 기준으로 체크
+    var_a = variants.get("A", {})
+    mom_en = var_a.get("mom_en", [])
+    admin_text = var_a.get("admin_text", "")
+
+    if not mom_en:
+        return {"has_issues": False, "feedback": "", "sentences": []}
+
+    # 1. Chopped Sentences 탐지
+    for i, line in enumerate(mom_en, 1):
+        chopped = detect_chopped_sentences(line)
+        if chopped:
+            for c in chopped:
+                issues.append(
+                    f"[{i}번 문장] Chopped Sentences 탐지: \"{c['original']}\" ({c['pattern']}). "
+                    f"수정: 대시(—)로 연결하거나 완전문(5-8단어)으로 재작성"
+                )
+                sentences_to_fix.add(i)
+
+    # 2. 질문(?) 0개 체크
+    has_question = any("?" in line for line in mom_en)
+    if not has_question:
+        issues.append(
+            "[전체] 질문(?) 0개 - 상호작용 부재. "
+            "수정: 최소 1개 질문 포함 (예: 'Want to go outside?', 'Did you see that?')"
+        )
+        sentences_to_fix.add(2)  # 보통 2번째 문장을 질문으로
+
+    # 3. 총 단어 수 체크
+    total_words = sum(len(line.split()) for line in mom_en)
+    if total_words < 14:
+        issues.append(
+            f"[전체] 총 {total_words}단어 - DB 최소(14단어)보다 부족. "
+            f"수정: 17-23단어 목표로 문장 확장"
+        )
+        sentences_to_fix.update([1, 2, 3])
+
+    # 4. 느낌표만 있는지 체크
+    punctuation = {"!": 0, "?": 0, ".": 0}
+    for line in mom_en:
+        if line.endswith("!"):
+            punctuation["!"] += 1
+        elif line.endswith("?"):
+            punctuation["?"] += 1
+        else:
+            punctuation["."] += 1
+
+    if punctuation["!"] == 3 and punctuation["?"] == 0:
+        issues.append(
+            "[전체] 3문장 모두 느낌표(!) + 질문 0개 - 단조로움. "
+            "수정: 최소 1개 질문(?) 또는 마침표(.) 포함"
+        )
+        sentences_to_fix.add(2)
+
+    if issues:
+        return {
+            "has_issues": True,
+            "feedback": "\n".join(issues),
+            "sentences": list(sentences_to_fix) if sentences_to_fix else [1, 2, 3]
+        }
+    else:
+        return {"has_issues": False, "feedback": "", "sentences": []}
+
+
+def extract_must_fix_feedback(review_result: dict, generated_result: dict = None) -> dict:
     """검수 결과에서 must_fix 항목을 추출하여 레벨별 피드백으로 변환.
+
+    추가로 L1에 대해 자동 탐지 로직을 실행하여 GPT가 놓친 문제도 잡아냅니다.
 
     Returns:
         {
@@ -857,11 +978,11 @@ def extract_must_fix_feedback(review_result: dict) -> dict:
         var_data = variants.get(best_pick, {})
         must_fix_list = var_data.get("must_fix", [])
 
-        if must_fix_list:
-            # must_fix를 피드백 문자열로 변환
-            feedback_parts = []
-            sentences = set()
+        feedback_parts = []
+        sentences = set()
 
+        # GPT가 제공한 must_fix 처리
+        if must_fix_list:
             for fix in must_fix_list:
                 sentence_num = fix.get("sentence_num", 0)
                 problem = fix.get("problem", "")
@@ -877,6 +998,27 @@ def extract_must_fix_feedback(review_result: dict) -> dict:
                     + (f" (예: \"{suggested_fix}\")" if suggested_fix else "")
                 )
 
+        # L1에 대해 추가 자동 탐지 (GPT가 놓친 문제 잡기)
+        if level_key == "level_1" and generated_result:
+            auto_detected = detect_l1_issues(generated_result)
+            if auto_detected["has_issues"]:
+                # 기존 피드백에 추가
+                feedback_parts.append("\n[자동 탐지된 문제]")
+                feedback_parts.append(auto_detected["feedback"])
+                sentences.update(auto_detected["sentences"])
+
+        # verdict가 revise인 경우도 재생성 트리거
+        verdict = var_data.get("verdict", "pass")
+        if verdict == "revise" and not feedback_parts:
+            # must_fix는 없지만 revise 판정인 경우
+            issues_list = var_data.get("issues", [])
+            if issues_list:
+                feedback_parts.append("[revise 판정 이슈]")
+                for issue in issues_list[:3]:  # 상위 3개만
+                    feedback_parts.append(f"- {issue}")
+                sentences.update([1, 2, 3])  # 전체 재생성
+
+        if feedback_parts:
             feedback_by_level[level_key] = {
                 "has_issues": True,
                 "feedback": "\n".join(feedback_parts),
@@ -897,11 +1039,12 @@ def step4_review_with_auto_fix(
     generated: dict,
     category: Optional[str] = None,
     df=None,
-    max_fix_attempts: int = 2
+    max_fix_attempts: int = 3
 ) -> tuple[dict, dict, int]:
     """검수 + 자동 수정 루프.
 
-    must_fix 항목이 있으면 자동으로 재생성하고 다시 검수합니다.
+    must_fix 항목이 있거나 verdict가 revise인 경우 자동으로 재생성하고 다시 검수합니다.
+    L1에 대해 Chopped Sentences 등을 자동 탐지하여 GPT가 놓친 문제도 잡습니다.
     최대 max_fix_attempts 번까지 시도합니다.
 
     Args:
@@ -909,7 +1052,7 @@ def step4_review_with_auto_fix(
         generated: Step 3 생성 결과
         category: 카테고리
         df: DB DataFrame
-        max_fix_attempts: 최대 수정 시도 횟수
+        max_fix_attempts: 최대 수정 시도 횟수 (기본 3)
 
     Returns:
         (최종 생성 결과, 최종 검수 결과, 수정 횟수)
@@ -925,12 +1068,32 @@ def step4_review_with_auto_fix(
         overall = review_result.get("overall_recommendation", {})
         auto_regen = overall.get("auto_regenerate_needed", False)
 
-        # must_fix 항목 추출
-        feedback_by_level = extract_must_fix_feedback(review_result)
+        # must_fix 항목 추출 (generated_result 전달하여 자동 탐지 활성화)
+        feedback_by_level = extract_must_fix_feedback(review_result, current_generated)
         has_any_must_fix = any(f["has_issues"] for f in feedback_by_level.values())
 
-        if not has_any_must_fix and not auto_regen:
-            # 수정 필요 없음 - 통과
+        # verdict 체크 - revise도 재생성 대상
+        review_data = review_result.get("review", {})
+        has_revise_verdict = False
+        for level_key in ["level_1", "level_2", "level_3"]:
+            level_data = review_data.get(level_key, {})
+            variants = level_data.get("variants", {})
+            for var_key, var_data in variants.items():
+                if var_data.get("verdict") == "revise":
+                    has_revise_verdict = True
+                    # revise인데 feedback이 없으면 추가
+                    if not feedback_by_level[level_key]["has_issues"]:
+                        issues = var_data.get("issues", [])
+                        if issues:
+                            feedback_by_level[level_key] = {
+                                "has_issues": True,
+                                "feedback": f"[revise 판정] " + ", ".join(issues[:3]),
+                                "sentences": [1, 2, 3]
+                            }
+                    break
+
+        # 통과 조건: must_fix 없음 + auto_regen 아님 + revise verdict 없음
+        if not has_any_must_fix and not auto_regen and not has_revise_verdict:
             logger.info(f"✅ 검수 통과 (수정 횟수: {fix_count})")
             return current_generated, review_result, fix_count
 
@@ -946,7 +1109,7 @@ def step4_review_with_auto_fix(
         # 각 레벨별로 문제가 있는 것만 재생성
         for level_key, level_feedback in feedback_by_level.items():
             if level_feedback["has_issues"]:
-                logger.info(f"  - {level_key} 재생성: {level_feedback['feedback'][:50]}...")
+                logger.info(f"  - {level_key} 재생성: {level_feedback['feedback'][:80]}...")
 
                 try:
                     current_generated = step3_regenerate_targeted(
@@ -955,7 +1118,7 @@ def step4_review_with_auto_fix(
                         target_level=level_key,
                         feedback=level_feedback["feedback"],
                         target_sentences=level_feedback["sentences"],
-                        preserve_variant="A",  # 일단 A 기준
+                        preserve_variant="A",
                         category=category,
                         df=df
                     )
@@ -1033,7 +1196,7 @@ def run_pipeline(
     step2_result = step2_structure(topic)
     results["steps"]["step2"] = step2_result
 
-    # Step 3 & 4: 생성 + 검수 (재시도 로직 포함)
+    # Step 3 & 4: 생성 + 검수 + 자동 수정 (재시도 로직 포함)
     MAX_RETRIES = 5
     STEP3_RETRY = 3
 
@@ -1056,11 +1219,21 @@ def run_pipeline(
             results["steps"]["step2"] = step2_result
             step3_result = step3_generate(step2_result, category=category, df=df)
 
-        results["steps"]["step3"] = step3_result
+        # Step 4: 검수 + 자동 수정 루프 (GPT - 크로스 프로바이더)
+        # must_fix 항목이나 revise verdict가 있으면 자동 재생성
+        step3_result, step4_result, fix_count = step4_review_with_auto_fix(
+            structure=step2_result,
+            generated=step3_result,
+            category=category,
+            df=df,
+            max_fix_attempts=3
+        )
 
-        # Step 4: 검수 (GPT - 크로스 프로바이더)
-        step4_result = step4_review(step3_result, category=category, df=df)
+        results["steps"]["step3"] = step3_result
         results["steps"]["step4"] = step4_result
+
+        if fix_count > 0:
+            logger.info(f"자동 수정 {fix_count}회 수행됨")
 
         # verdict 체크
         overall = step4_result.get("overall_recommendation", {})

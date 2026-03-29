@@ -1371,13 +1371,15 @@ def render_gen_step3_final():
             st.rerun()
 
     with col2:
-        if st.button("🎉 확정 & Google Sheets 저장", type="primary"):
+        # 저장 중 플래그로 중복 클릭 방지
+        is_saving = st.session_state.get("is_saving", False)
+        save_button = st.button("🎉 확정 & Google Sheets 저장", type="primary", disabled=is_saving)
+
+        if save_button and not is_saving:
+            st.session_state.is_saving = True  # 저장 시작 플래그
             with st.spinner("Google Sheets에 저장 중..."):
                 try:
                     import sheets_writer
-
-                    # 디버그: 저장할 데이터 확인
-                    st.write(f"🔍 저장 시도: {topic}, {target_date}")
 
                     result = sheets_writer.append_content(
                         topic=topic,
@@ -1387,30 +1389,35 @@ def render_gen_step3_final():
                         level3_text=final_texts.get("level_3", "")
                     )
 
-                    st.write(f"🔍 저장 결과: {result}")
-
                     if result.get("success"):
-                        # 상태 업데이트
-                        st.session_state.planned_topics[st.session_state.current_topic_idx]["status"] = "completed"
+                        # 중복 저장인 경우
+                        if result.get("duplicate"):
+                            st.warning(f"⚠️ {result.get('message')}")
+                            st.session_state.is_saving = False
+                        else:
+                            # 상태 업데이트
+                            st.session_state.planned_topics[st.session_state.current_topic_idx]["status"] = "completed"
 
-                        # 저장 완료 플래그 설정 (중첩 버튼 대신 플래그 사용)
-                        st.session_state.save_completed = True
-                        st.session_state.save_result = result
+                            # 저장 완료 플래그 설정 (중첩 버튼 대신 플래그 사용)
+                            st.session_state.save_completed = True
+                            st.session_state.save_result = result
 
-                        # 콘텐츠 관리 페이지 캐시 클리어 (새 콘텐츠 반영)
-                        st.session_state.sheets_contents = []
+                            # 콘텐츠 관리 페이지 캐시 클리어 (새 콘텐츠 반영)
+                            st.session_state.sheets_contents = []
 
-                        # 월간 기획 자동 저장 (완료 상태 반영)
-                        target_month = datetime.strptime(target_date, "%Y-%m-%d").replace(day=1)
-                        save_result = save_monthly_plan(target_month, st.session_state.planned_topics)
-                        st.write(f"🔍 월간 기획 저장: {save_result}")
+                            # 월간 기획 자동 저장 (완료 상태 반영)
+                            target_month = datetime.strptime(target_date, "%Y-%m-%d").replace(day=1)
+                            save_monthly_plan(target_month, st.session_state.planned_topics)
 
-                        st.rerun()  # 상태 업데이트 후 리런
+                            st.session_state.is_saving = False  # 저장 완료
+                            st.rerun()  # 상태 업데이트 후 리런
                     else:
+                        st.session_state.is_saving = False  # 저장 실패 시에도 플래그 해제
                         st.error(f"❌ 저장 실패: {result.get('error', '알 수 없는 오류')}")
 
                 except Exception as e:
                     import traceback
+                    st.session_state.is_saving = False  # 예외 시에도 플래그 해제
                     st.error(f"❌ 저장 실패: {e}")
                     st.code(traceback.format_exc())
 

@@ -717,9 +717,10 @@ def update_topic_context(
     level2_context: str = None,
     level3_context: str = None,
     status: str = None,
+    topic: str = None,
     spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
 ) -> dict:
-    """특정 날짜의 레벨별 맥락을 업데이트합니다.
+    """특정 날짜의 레벨별 맥락을 업데이트합니다. 없으면 새 행을 추가합니다 (upsert).
 
     구조검토 승인 시 Claude 분석 내용 저장용.
 
@@ -729,15 +730,17 @@ def update_topic_context(
         level2_context: L2 맥락
         level3_context: L3 맥락
         status: 상태 변경 (선택)
+        topic: 주제명 (새 행 추가 시 필요)
         spreadsheet_name: 스프레드시트 이름
     """
     try:
         worksheet = get_or_create_plans_worksheet(spreadsheet_name)
         all_values = worksheet.get_all_values()
 
+        # 해당 날짜 찾기
         for i, row in enumerate(all_values[1:], start=2):
             if row and row[0] == date:
-                # 업데이트할 값 준비
+                # 기존 행 업데이트
                 updates = []
                 if status is not None:
                     updates.append((f'D{i}', status))
@@ -751,11 +754,27 @@ def update_topic_context(
 
                 # 일괄 업데이트
                 for cell, value in updates:
-                    worksheet.update(cell, value)
+                    worksheet.update(cell, [[value]])
 
-                return {'success': True, 'date': date, 'row': i}
+                return {'success': True, 'action': 'updated', 'date': date, 'row': i}
 
-        return {'success': False, 'error': f'{date} 날짜를 찾을 수 없습니다'}
+        # 날짜가 없으면 새 행 추가 (upsert)
+        dt = datetime.strptime(date, "%Y-%m-%d")
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+        day_str = weekdays[dt.weekday()]
+
+        new_row = [
+            date,
+            day_str,
+            topic or '',
+            status or 'in_progress',
+            level1_context or '',
+            level2_context or '',
+            level3_context or '',
+            datetime.now().isoformat()
+        ]
+        worksheet.append_row(new_row, value_input_option='USER_ENTERED')
+        return {'success': True, 'action': 'inserted', 'date': date}
 
     except Exception as e:
         return {'success': False, 'error': str(e)}
@@ -767,11 +786,11 @@ def upsert_topic_status(
     status: str,
     spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
 ) -> dict:
-    """특정 날짜의 status를 업데이트합니다. 없으면 새로 추가합니다.
+    """특정 날짜의 status와 topic을 업데이트합니다. 없으면 새로 추가합니다.
 
     Args:
         date: 날짜 (YYYY-MM-DD)
-        topic: 주제명
+        topic: 주제명 (업데이트 시에도 반영됨)
         status: 상태 (pending, in_progress, completed)
         spreadsheet_name: 스프레드시트 이름
 
@@ -785,9 +804,10 @@ def upsert_topic_status(
         # 해당 날짜 찾기
         for i, row in enumerate(all_values[1:], start=2):
             if row and row[0] == date:
-                # 기존 행 업데이트 (status만)
-                worksheet.update(f'D{i}', status)
-                worksheet.update(f'H{i}', datetime.now().isoformat())
+                # 기존 행 업데이트 (topic + status)
+                worksheet.update(f'C{i}', [[topic]])  # topic도 업데이트
+                worksheet.update(f'D{i}', [[status]])
+                worksheet.update(f'H{i}', [[datetime.now().isoformat()]])
                 return {'success': True, 'action': 'updated', 'date': date, 'row': i}
 
         # 없으면 새 행 추가

@@ -771,6 +771,15 @@ def render_topic_list():
                         elif f"manual_{idx}" in st.session_state:
                             st.session_state.planned_topics[idx]["topic"] = st.session_state[f"manual_{idx}"]
 
+                    # Sheets에 편집된 주제 즉시 동기화
+                    topic_data = st.session_state.planned_topics[idx]
+                    import sheets_writer
+                    sheets_writer.upsert_topic_status(
+                        date=topic_data["date"],
+                        topic=topic_data["topic"],
+                        status=topic_data.get("status", "in_progress")
+                    )
+
                     # 생성 모드로 전환
                     st.session_state.current_topic_idx = idx
                     st.session_state.gen_step = 0
@@ -1084,14 +1093,17 @@ def render_gen_step1_structure_review():
                 l2_ctx = format_context(levels.get("level_2", {}))
                 l3_ctx = format_context(levels.get("level_3", {}))
 
-                # 월간 기획에 맥락 저장
-                sheets_writer.update_topic_context(
+                # 월간 기획에 맥락 저장 (없으면 새 행 추가)
+                context_result = sheets_writer.update_topic_context(
                     date=target_date,
                     level1_context=l1_ctx,
                     level2_context=l2_ctx,
                     level3_context=l3_ctx,
-                    status="in_progress"
+                    status="in_progress",
+                    topic=topic  # upsert 시 주제명 필요
                 )
+                if not context_result.get('success'):
+                    st.warning(f"맥락 저장 실패: {context_result.get('error')}")
             except Exception as e:
                 st.warning(f"맥락 저장 실패 (진행에는 영향 없음): {e}")
 

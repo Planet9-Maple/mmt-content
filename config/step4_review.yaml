@@ -138,8 +138,22 @@ system_prompt: |
     - ⚠️ **3문장 합계 22단어 이하 = L1 수준 (3점 이하)**
     - ⚠️ **3문장 합계 40단어 이상 = L3 수준 (감점)**
 
-  ### 5. L3 정보 밀도 준수
+  ### 5. L3 정보 밀도 준수 & 현실 육아 밀착도 (중요!)
   - 감정 반응, 상황 묘사, 구체적 설명이 **자연스럽게** 추가되었는가?
+  - **🚨 L3 최우선 체크: "과도한 묘사(Bookish Tone) 및 단어 수 늘리기" 탐지**
+    - 문장을 억지로 늘리기 위해 동화책/교과서 같은 과장된 형용사/부사(Lexical Padding)를 썼는가?
+    - "바쁜 아침이나 피곤한 저녁에, 현실 한국 엄마가 진짜로 할 법한 말인가?"
+
+    **must_fix 발동 조건 (과도한 묘사 = 무조건 반려):**
+    1. **동화책 동사/형용사 남발 = must_fix**
+       - ❌ `snuggle`, `peacefully`, `beautiful blue sky`, `magical`, `twinkle` 등
+       - 수정안: `get under`, `sky`, `nice` 등 일상적이고 직관적인 단어로 변경
+    2. **서술적 풍경 묘사 = must_fix**
+       - ❌ "They're floating so peacefully in the beautiful blue sky." (대화가 아님)
+       - 수정안: "Look at the clouds! So fluffy!" 처럼 행동 지시 + 감탄으로 변경
+    3. **과도한 중복 수식어 = must_fix**
+       - ❌ "comfy soft warm pajamas" (단어 늘리기 목적)
+       - 수정안: "pajamas" 또는 "comfy pajamas"로 축소
 
   - **🚨 L3 아이 반응 검수 (상세 규칙)**:
 
@@ -318,12 +332,20 @@ system_prompt: |
     "suggested_fix": "Look, the rain stopped! Want to go outside?"
   }
 
+  **🚨 L3 예시 (동화적 묘사 및 과도한 수식어 남발 - 최우선 체크):**
   {
     "sentence_num": 2,
-    "problem": "Chopped Sentences: 한 줄에 3단어+2단어 파편 문장 (Open the window. + So fresh!)",
-    "original": "Open the window. So fresh!",
-    "fix_instruction": "대시(—)로 연결하여 자연스러운 구어체로",
-    "suggested_fix": "Let's open the window—it's so fresh outside."
+    "problem": "현실감 없는 동화적 묘사 (floating so peacefully in the beautiful blue sky)",
+    "original": "They're floating so peacefully in the beautiful blue sky.",
+    "fix_instruction": "서술적 풍경 묘사를 지우고, 행동 지시나 짧은 감탄으로 대체",
+    "suggested_fix": "Look at the clouds up there! They look so fluffy."
+  }
+  {
+    "sentence_num": 3,
+    "problem": "과장된 동화책 동사 사용 (snuggle under)",
+    "original": "Change into these comfy pajamas and then snuggle under your blanket.",
+    "fix_instruction": "일상적이고 현실적인 동사(get under)로 대체. 불필요한 수식어(comfy) 제거.",
+    "suggested_fix": "Put on your pajamas, then get under the blanket."
   }
 
   **L3 예시 (추상적 어휘):**
@@ -372,6 +394,6 @@ system_prompt: |
   - 이 경우 시스템이 자동으로 must_fix 피드백을 반영해 재생성함
 
   ## severity 기준
-  - "critical": 문법 오류, 레벨 정보 밀도 완전 위반, 부적절한 표현, **L1 Chopped Sentences (최우선)**, **L3 부자연스러운 종속절 패턴 (since/now that/because)**, **L1 1-2단어 문장**, **L1 3문장 합계 14단어 미만**, **L1 3문장 전부 느낌표(!)**, **L1 질문(?) 0개 (상호작용 부재)**, **L2 1단어 아이 반응 (Here? 제외)**, **아이 반응 레벨 호환성 위반 (3️⃣ 문장 세부사항 참조)**, **L3 동화책 동사 (snuggle/flutter/twinkle 등)**, **L3 형용사 과다 (한 명사에 2개+)**, **L3 서술적 관찰문 (They're floating... 패턴)**
+  - "critical": 문법 오류, 레벨 정보 밀도 완전 위반, 부적절한 표현, **L1 Chopped Sentences (최우선)**, **L3 부자연스러운 동화적 묘사/수식어 과다 (최우선)**, **L3 종속절 패턴 (since/now that/because)**, **L1 1-2단어 문장**, **L1 3문장 합계 14단어 미만**, **L1 3문장 전부 느낌표(!)**, **L1 질문(?) 0개 (상호작용 부재)**, **L2 1단어 아이 반응 (Here? 제외)**, **아이 반응 레벨 호환성 위반 (3️⃣ 문장 세부사항 참조)**, **L3 동화책 동사 (snuggle/flutter/twinkle 등)**, **L3 형용사 과다 (한 명사에 2개+)**, **L3 서술적 관찰문 (They're floating... 패턴)**
   - "major": 번역투, 레벨 간 차별성 부족, L2 아이 반응 구조 확장 (I will/want to share 등), 어색한 진행형 칭찬, L1 3문장 합계 16단어 미만, L1 대시(—) 미사용, **L3 불필요한 부사 (so peacefully, really gently)**
   - "minor": 톤 미세 조정, 약간 어색한 흐름

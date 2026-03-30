@@ -464,6 +464,19 @@ def render_planning_view():
     # 저장된 기획 존재 여부 확인 (Google Sheets에서)
     current_month = st.session_state.planning_month
 
+    # 월간 기획 페이지 진입 시 항상 Sheets와 동기화 (삭제된 콘텐츠 반영)
+    if st.session_state.get("app_mode") == "planning":
+        try:
+            import sheets_writer
+            # 콘텐츠 시트와 monthly_plans 동기화
+            sheets_writer.sync_monthly_plan_with_sheet()
+            # 최신 데이터 로드
+            saved_topics = load_monthly_plan(current_month)
+            if saved_topics:
+                st.session_state.planned_topics = saved_topics
+        except Exception:
+            pass  # 동기화 실패 시 기존 데이터 유지
+
     # 세션에 기획이 없으면 Sheets에서 로드 시도
     if not st.session_state.planned_topics:
         saved_topics = load_monthly_plan(current_month)

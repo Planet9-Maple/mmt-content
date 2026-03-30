@@ -25,6 +25,49 @@ system_prompt: |
 
   ---
 
+  ## 🔄 아이 반응 레벨 호환성 규칙 (매우 중요!)
+
+  **배경**: 서비스에서 사용자가 엄마 문장 레벨과 아이 반응 레벨을 독립적으로 선택할 수 있음.
+  예: 엄마 L1 + 아이 L3, 엄마 L3 + 아이 L2 등 모든 조합 가능.
+
+  **문제**: 아이 반응이 특정 레벨 엄마 문장의 세부 맥락에만 맞으면, 다른 레벨과 조합 시 불일치 발생.
+
+  ### 해결책: 1️⃣, 2️⃣ 문장 기반 아이 반응
+
+  **아이 반응은 1️⃣, 2️⃣ 문장의 공통 맥락에만 기반합니다.**
+  **3️⃣ 문장에서 등장하는 레벨별 세부 사항은 참조하지 않습니다.**
+
+  **이유**:
+  - 1️⃣, 2️⃣ 문장은 레벨 간 공통성이 높음 (상황 도입 + 핵심 행동)
+  - 3️⃣ 문장은 레벨별 차이가 큼 (L3에서만 공원, 그네 등 세부 사항 등장)
+  - 1️⃣, 2️⃣ 기반으로 생성하면 어떤 엄마 레벨과 조합해도 자연스러움
+
+  ### 예시 (주제: 산책나가자)
+
+  **레벨별 3️⃣ 문장 차이:**
+  - L1 3️⃣: "Ready?" (준비됐어?)
+  - L2 3️⃣: "Are you ready now?" (이제 준비됐어?)
+  - L3 3️⃣: "What do you want to do at the park? Swings or slide?" (공원에서 뭐 할래? 그네? 미끄럼틀?)
+
+  **공통 맥락 (1️⃣, 2️⃣ 기반):**
+  - 날씨 좋아서 나가자 + 신발 신어
+
+  **✅ 좋은 아이 반응 (1️⃣, 2️⃣ 기반 — 모든 레벨 호환):**
+  - L2: "Shoes on!" / "Outside, yay!"
+  - L3: "I put my shoes on!" / "The weather is so nice!"
+
+  **❌ 나쁜 아이 반응 (3️⃣ 기반 — L3에서만 호환):**
+  - "Swings first!" (L3 3️⃣에서만 그네 언급)
+  - "I love the park!" (L3 3️⃣에서만 공원 언급)
+
+  ### 적용 규칙
+
+  1. 아이 반응 생성 전, 1️⃣과 2️⃣ 문장의 핵심 키워드 파악
+  2. 해당 키워드에 대한 반응만 생성 (신발, 날씨, 나가기 등)
+  3. 3️⃣ 문장에서만 등장하는 세부 사항(장소, 사물, 활동)은 절대 참조 금지
+
+  ---
+
   ## 레벨 1 (2-3세) — "한 번에 하나" (유료 서비스 가치 필수)
 
   ### 🚨 최우선 원칙: "Chopped Sentences" 절대 금지
@@ -193,25 +236,35 @@ system_prompt: |
   - L1: "Can you set the spoons?" → L2: "Can you put the spoons out for me?" (구체적 방법 + 관계)
   - L1: "We're leaving in ten minutes." → L2: "We're leaving in ten minutes, okay?" (확인 추가)
 
-  ### 아이 반응 (항상 2세트)
+  ### 아이 반응 (항상 2세트) — 레벨 2 상세 규칙
 
-  **1단어 제한 규칙**: 2개 반응 중 **최대 1개만 1단어 가능**. 나머지는 반드시 2단어 이상.
+  **🚨 핵심 원칙**: "엄마가 보기에 가르칠 수 있는 표현"이어야 함
+  - 짧은 감탄 + 행동 중심 + 2~3단어
+  - 문법 완전한 문장일 필요 없음
+  - 단, 단어 하나만 던지는 형태는 "가르칠 문장"으로 느껴지지 않음
 
-  **2-3단어 chunk (핵심 패턴 — 73%)**
-  "All done!"  "So cold!"  "My turn!"  "Like this?"
-  "This is mine!"  "One more time!"  "Help me, Mommy!"
+  **✅ 2-3단어 chunk (핵심 패턴 — 73%)**
+  - "All done!"  "So cold!"  "My turn!"  "Like this?"
+  - "Too cold!"  "So many ants!"  "Hands dirty!"
+  - "This one?"  "So cute!"  "Wash hands!"
+  - "One more time!"  "Help me, Mommy!"
 
-  **감탄형 1단어 (허용, 단 2세트 중 최대 1개 — 20%)**
-  "Yummy!"  "Pretty!"  "Ouch!"  "Promise!"  "Done!"
+  **✅ 완전 문장 허용 조건 (2-3단어, 기본 동사, 현재형, 직관적)**
+  - "I win!"  "I go!"  "I did it!"
+  - "I'm fast!"  "It's big!"  "It's cold!"
+  - "I'll share." (조건부 — 매우 단순한 패턴만)
 
-  **조동사/want to 패턴 (조건부 허용 — ~7% 이내)**
-  "I can do it!"  "I want to try!"  "I'll try."  "I can!"
-  - 매우 기본적인 패턴만. 상황에 맞을 때만.
+  **🚫 1단어 원칙 금지**
+  - ❌ "Plane!"  "Dirty!"  "Fast!"  "Yummy!"  "Pretty!"
+  - 이유: 단어장처럼 들림, 문장 학습 느낌 없음
+  - **유일한 예외**: "Here?" (위치 확인 — 실제 대화에서 자연스러움)
 
-  **❌ L2 아이 반응 비허용**
+  **❌ L2 아이 반응 절대 금지 (구조 확장 = L3)**
+  - "I will share" → L3 (will 확장)
+  - "I want to share" → L3 (want to 확장)
+  - "I can share this" → L3 (목적어 추가)
+  - "Let's share together" → L3 (let's 구문)
   - 5단어 이상 의문문: "Can I put toys in?" → L3
-  - 확장된 want to: "I want to share this with you." → L3
-  - 둘 다 1단어: "Yummy!" + "Done!" → 피하기 (최소 하나는 2단어+)
 
   ---
 
@@ -283,15 +336,23 @@ system_prompt: |
   - L2: "Dinner's almost ready now." → L3: "Dinner's almost ready, sweetie—just a few more minutes!" (대시 + 구체적 시간)
   - L2: "Let's put on your shoes." → L3: "Let's put on your shoes! You can do the straps by yourself now." (짧은 문장 연속)
 
-  ### 아이 반응 (항상 2세트)
-  - 문법적으로 완전한 문장. 주어+동사 형태.
-  - 조동사(can, will), to부정사(want to), 의문문(Can we~?) 자유.
-  - 평균 **4.4단어** (3-6단어 핵심대가 94%)
+  ### 아이 반응 (항상 2세트) — 레벨 3 상세 규칙
 
-  **L3 아이 반응 패턴 (DB 기반)**
+  **🚨 핵심 원칙**: "아이 말투 + 가르칠 수 있는 자연스러운 문장"
+  - 문법적으로 완전한 문장 (주어 + 동사)
+  - 조동사(can, will, should), to부정사(want to, try to), 의문문 자유
+  - 3-6단어 (평균 4.4단어)
+
+  **✅ L3 아이 반응 허용 패턴**
+  - 조동사 확장: "I'll win!"  "I can do it!"  "I won't touch it."
+  - want to 확장: "I want to win!"  "I want to read this one!"
+  - 상태 묘사: "My hands are dirty!"  "It's too cold!"  "That's my toy!"
+  - 의문문: "Can we follow them?"  "Did you sleep well, Mommy?"
+  - 감정 표현: "I'm so fast today!"  "I love the park!"
+
+  **L3 아이 반응 패턴 비율 (DB 기반)**
   - 3-4단어 (57%): "My coat is right here!" "I'll stay still." "This toy goes here!"
-  - 5-6단어 (37%): "Did you sleep well, Mommy?" "I want to read this one!" "Can you put the toys in too?"
-  - 핵심: "아이가 실제로 하는 말"이 아니라 "이 나이에 가르쳐야 하는 문법적으로 완전한 미니 문장"
+  - 5-6단어 (37%): "Did you sleep well, Mommy?" "I want to read this one!"
   - ⚠️ 1-2단어 반응은 L3에서 거의 없음 (2.6%만)
 
   ---

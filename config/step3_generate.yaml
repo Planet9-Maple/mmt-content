@@ -275,6 +275,42 @@ system_prompt: |
   - **핵심: 복잡한 문법이 아니라 "감탄 + 짧은 문장 연속"으로 자연스럽게 길어지는 것**
   - **말투: 4-6세 아이에게 말하는 엄마의 따뜻한 구어체**
 
+  ### 🚨 L3 최우선 금지: 동화책/교과서 스타일
+
+  **L3가 길어지는 올바른 방식**: 행동/지시 추가 (동사 중심)
+  **L3가 길어지면 안 되는 방식**: 묘사/형용사 추가 (형용사 중심)
+
+  ❌ **절대 금지 - 동화책 동사 (일상에서 안 씀)**
+  - snuggle, flutter, twinkle, sparkle, shimmer, glisten
+  - tiptoe, scamper, tumble, nestle, cuddle up
+  - 대체: get under, go to sleep, move, lie down
+
+  ❌ **절대 금지 - 형용사 과다 (한 명사에 2개 이상)**
+  - ❌ "beautiful blue sky" → ✅ "blue sky" 또는 그냥 "sky"
+  - ❌ "comfy soft pajamas" → ✅ "pajamas" 또는 "your pajamas"
+  - ❌ "nice warm bath" → ✅ "a bath" 또는 "your bath"
+
+  ❌ **절대 금지 - 불필요한 부사**
+  - ❌ "so peacefully", "really gently", "very quietly"
+  - ❌ "floating peacefully" → ✅ "floating" 또는 "Look at the clouds!"
+  - 부사 없이도 의미 전달되면 삭제
+
+  ❌ **절대 금지 - 서술적 관찰 (대화가 아닌 묘사)**
+  - ❌ "They're floating in the beautiful blue sky."
+  - ❌ "The stars are twinkling so brightly tonight."
+  - ✅ "Look at those clouds!" (지시) + "So fluffy!" (감탄)
+
+  **L3 길이 늘리는 올바른 방법:**
+  - 행동 추가: "Put on your pajamas. Now get under the blanket." (동사 2개)
+  - 질문 추가: "Which pajamas do you want? The blue ones?"
+  - 짧은 문장 연속: "Time for bed. Get your blanket. Cozy, right?"
+  - 대시 연결: "Let's get ready for bed—grab your pajamas!"
+
+  **L3 길이 늘리면 안 되는 방법:**
+  - 형용사 추가: ❌ "comfy soft warm"
+  - 부사 추가: ❌ "so peacefully gently"
+  - 서술적 묘사: ❌ "floating in the beautiful sky"
+
   ### 🚫 영어 6대 원칙 (모든 레벨 공통, L3에서 특히 중요)
 
   **1. 설명 < 지시** - 이유를 길게 설명하지 않음

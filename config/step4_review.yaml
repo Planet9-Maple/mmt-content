@@ -192,6 +192,36 @@ system_prompt: |
 
     **위 원칙 위반이 하나라도 있으면 verdict = "revise" + 구체적 수정안 제시**
 
+  - **🚫 L3 동화책/교과서 스타일 감점 (must_fix - 가장 흔한 AI 실수)**:
+
+    **7. 동화책 동사** 사용 = must_fix:
+       - ❌ snuggle, flutter, twinkle, sparkle, shimmer, nestle, cuddle up, tiptoe
+       - 수정안: get under, go to sleep, move, lie down 등 일상 동사로
+
+    **8. 형용사 과다** (한 명사에 2개 이상) = must_fix:
+       - ❌ "beautiful blue sky", "comfy soft pajamas", "nice warm bath"
+       - 수정안: 형용사 1개만 남기거나 모두 삭제
+
+    **9. 불필요한 부사** = must_fix:
+       - ❌ "so peacefully", "really gently", "very quietly", "so beautifully"
+       - 탐지: "so + 부사", "really + 부사", "very + 부사" 패턴
+       - 수정안: 부사 삭제하거나 단순화
+
+    **10. 서술적 관찰문** (대화가 아닌 묘사) = must_fix:
+       - ❌ "They're floating in the beautiful blue sky." (관찰 진술)
+       - ❌ "The stars are twinkling so brightly." (시적 묘사)
+       - 탐지: 주어가 사물/자연 + be동사 + ~ing + 형용사/부사
+       - 수정안: 지시문 + 짧은 감탄으로 변경
+         → ✅ "Look at those clouds! So fluffy, right?"
+
+    **동화책 스타일 예시 (must_fix):**
+    | 문제 문장 | 수정안 |
+    |----------|--------|
+    | "snuggle under your blanket" | "get under the blanket" |
+    | "floating so peacefully in the beautiful blue sky" | "Look at those clouds floating!" |
+    | "the comfy soft pajamas" | "your pajamas" |
+    | "twinkling brightly in the night sky" | "Look at the stars!" |
+
   - **✅ 자연스러운 패턴 (권장)**:
     - 대시(—)로 감탄/반응 연결
     - 짧은 문장 2-3개 연속
@@ -342,6 +372,6 @@ system_prompt: |
   - 이 경우 시스템이 자동으로 must_fix 피드백을 반영해 재생성함
 
   ## severity 기준
-  - "critical": 문법 오류, 레벨 정보 밀도 완전 위반, 부적절한 표현, **L1 Chopped Sentences (최우선)**, **L3 부자연스러운 종속절 패턴 (since/now that/because)**, **L1 1-2단어 문장**, **L1 3문장 합계 14단어 미만**, **L1 3문장 전부 느낌표(!)**, **L1 질문(?) 0개 (상호작용 부재)**, **L2 1단어 아이 반응 (Here? 제외)**, **아이 반응 레벨 호환성 위반 (3️⃣ 문장 세부사항 참조)**
-  - "major": 번역투, 레벨 간 차별성 부족, L2 아이 반응 구조 확장 (I will/want to share 등), 어색한 진행형 칭찬, L1 3문장 합계 16단어 미만, L1 대시(—) 미사용
+  - "critical": 문법 오류, 레벨 정보 밀도 완전 위반, 부적절한 표현, **L1 Chopped Sentences (최우선)**, **L3 부자연스러운 종속절 패턴 (since/now that/because)**, **L1 1-2단어 문장**, **L1 3문장 합계 14단어 미만**, **L1 3문장 전부 느낌표(!)**, **L1 질문(?) 0개 (상호작용 부재)**, **L2 1단어 아이 반응 (Here? 제외)**, **아이 반응 레벨 호환성 위반 (3️⃣ 문장 세부사항 참조)**, **L3 동화책 동사 (snuggle/flutter/twinkle 등)**, **L3 형용사 과다 (한 명사에 2개+)**, **L3 서술적 관찰문 (They're floating... 패턴)**
+  - "major": 번역투, 레벨 간 차별성 부족, L2 아이 반응 구조 확장 (I will/want to share 등), 어색한 진행형 칭찬, L1 3문장 합계 16단어 미만, L1 대시(—) 미사용, **L3 불필요한 부사 (so peacefully, really gently)**
   - "minor": 톤 미세 조정, 약간 어색한 흐름

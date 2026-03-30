@@ -761,6 +761,57 @@ def update_topic_context(
         return {'success': False, 'error': str(e)}
 
 
+def upsert_topic_status(
+    date: str,
+    topic: str,
+    status: str,
+    spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
+) -> dict:
+    """특정 날짜의 status를 업데이트합니다. 없으면 새로 추가합니다.
+
+    Args:
+        date: 날짜 (YYYY-MM-DD)
+        topic: 주제명
+        status: 상태 (pending, in_progress, completed)
+        spreadsheet_name: 스프레드시트 이름
+
+    Returns:
+        {'success': True, 'action': 'updated'/'inserted'} or {'success': False, 'error': '...'}
+    """
+    try:
+        worksheet = get_or_create_plans_worksheet(spreadsheet_name)
+        all_values = worksheet.get_all_values()
+
+        # 해당 날짜 찾기
+        for i, row in enumerate(all_values[1:], start=2):
+            if row and row[0] == date:
+                # 기존 행 업데이트 (status만)
+                worksheet.update(f'D{i}', status)
+                worksheet.update(f'H{i}', datetime.now().isoformat())
+                return {'success': True, 'action': 'updated', 'date': date, 'row': i}
+
+        # 없으면 새 행 추가
+        dt = datetime.strptime(date, "%Y-%m-%d")
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+        day_str = weekdays[dt.weekday()]
+
+        new_row = [
+            date,
+            day_str,
+            topic,
+            status,
+            '',  # level1_context
+            '',  # level2_context
+            '',  # level3_context
+            datetime.now().isoformat()
+        ]
+        worksheet.append_row(new_row, value_input_option='USER_ENTERED')
+        return {'success': True, 'action': 'inserted', 'date': date}
+
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
 def delete_monthly_plan_from_sheets(
     month: str,
     spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"

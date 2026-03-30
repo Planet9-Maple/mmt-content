@@ -1,0 +1,54 @@
+{
+  "month": "2026-03",
+  "created_at": "2026-03-25T16:08:49.157482",
+  "topics": [
+    {
+      "date": "2026-03-01",
+      "day": "일",
+      "topic": "📚 복습",
+      "status": "review",
+      "is_review": true,
+      "suggestions": []
+    },
+    {
+      "date": "2026-03-02",
+      "day": "월",
+      "topic": "🧹 방 정리하기",
+      "status": "planned",
+      "is_review": false,
+      "suggestions": []
+    },
+    {
+      "date": "2026-03-03",
+      "day": "화",
+      "topic": "🍎 과일 먹기",
+      "status": "planned",
+      "is_review": false,
+      "suggestions": []
+    },
+    {
+      "date": "2026-03-04",
+      "day": "수",
+      "topic": "🦷 양치질하기",
+      "status": "completed",
+      "is_review": false,
+      "suggestions": []
+    },
+    {
+      "date": "2026-03-05",
+      "day": "목",
+      "topic": "👟 신발 신기",
+      "status": "planned",
+      "is_review": false,
+      "suggestions": []
+    },
+    {
+      "date": "2026-03-06",
+      "day": "금",
+      "topic": "🧸 장난감 정리",
+      "status": "planned",
+      "is_review": false,
+      "suggestions": []
+    }
+  ]
+}

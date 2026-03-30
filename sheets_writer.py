@@ -350,12 +350,79 @@ def get_all_contents(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB
 
 
 def delete_content(row_number: int, spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> dict:
-    """특정 행의 콘텐츠를 삭제합니다."""
+    """특정 행의 콘텐츠를 삭제하고, 월간 기획에서도 상태를 pending으로 변경합니다."""
     try:
         spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
         worksheet = spreadsheet.sheet1
+
+        # 삭제 전에 해당 행의 날짜 정보 가져오기
+        row_data = worksheet.row_values(row_number)
+        deleted_date = row_data[1] if len(row_data) > 1 else None
+
+        # 행 삭제
         worksheet.delete_rows(row_number)
-        return {'success': True, 'row': row_number}
+
+        # 월간 기획에서 해당 날짜의 상태를 pending으로 변경
+        if deleted_date:
+            sync_result = sync_monthly_plan_with_sheet(spreadsheet_name)
+
+        return {
+            'success': True,
+            'row': row_number,
+            'deleted_date': deleted_date,
+            'plan_synced': True
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def sync_monthly_plan_with_sheet(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> dict:
+    """시트의 실제 콘텐츠와 월간 기획의 상태를 동기화합니다.
+
+    - 시트에 있는 콘텐츠: completed
+    - 시트에 없는 콘텐츠: pending (재생성 가능)
+    """
+    try:
+        # 시트의 실제 콘텐츠 날짜 목록
+        contents = get_all_contents(spreadsheet_name)
+        sheet_dates = {c['date'] for c in contents if c.get('date')}
+
+        # 저장된 모든 월의 기획 확인
+        saved_months = get_all_saved_months(spreadsheet_name)
+
+        updated_months = []
+        for month_info in saved_months:
+            month = month_info['month']
+            topics = load_monthly_plan_from_sheets(month, spreadsheet_name)
+
+            if not topics:
+                continue
+
+            changed = False
+            for topic in topics:
+                date = topic.get('date', '')
+                current_status = topic.get('status', 'pending')
+
+                if date in sheet_dates:
+                    # 시트에 있으면 completed
+                    if current_status != 'completed':
+                        topic['status'] = 'completed'
+                        changed = True
+                else:
+                    # 시트에 없으면 pending (재생성 가능)
+                    if current_status == 'completed':
+                        topic['status'] = 'pending'
+                        changed = True
+
+            if changed:
+                save_monthly_plan_to_sheets(month, topics, spreadsheet_name)
+                updated_months.append(month)
+
+        return {
+            'success': True,
+            'synced_months': updated_months,
+            'sheet_dates': list(sheet_dates)
+        }
     except Exception as e:
         return {'success': False, 'error': str(e)}
 

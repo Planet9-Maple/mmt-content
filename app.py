@@ -262,6 +262,10 @@ def init_session_state():
         # 첫 로드 시 Sheets에서 가장 최근 저장된 월 로드
         try:
             import sheets_writer
+
+            # 시트와 월간 기획 동기화 (삭제된 콘텐츠 = pending으로)
+            sheets_writer.sync_monthly_plan_with_sheet()
+
             saved_months = sheets_writer.get_all_saved_months()
             if saved_months:
                 # 가장 최근 저장된 월 사용

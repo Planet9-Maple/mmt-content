@@ -1507,10 +1507,12 @@ def render_gen_step3_final():
                                 }]
 
                             # Sheets에 개별 날짜 status만 업데이트 (전체 덮어쓰기 방지)
-                            sheets_writer.upsert_topic_status(target_date, topic, 'completed')
+                            upsert_result = sheets_writer.upsert_topic_status(target_date, topic, 'completed')
+                            if not upsert_result.get('success'):
+                                st.warning(f"⚠️ 월간 기획 시트 업데이트 실패: {upsert_result.get('error', '알 수 없는 오류')}")
 
-                            # 로컬 백업도 저장
-                            save_monthly_plan(target_month, st.session_state.planned_topics)
+                            # 로컬 백업만 저장 (Sheets는 upsert로 이미 처리됨)
+                            _save_to_local(datetime.strptime(target_date, "%Y-%m-%d"), st.session_state.planned_topics)
 
                             st.session_state.is_saving = False  # 저장 완료
                             st.rerun()  # 상태 업데이트 후 리런
@@ -1675,7 +1677,9 @@ def render_management_view():
                             deleted_date = result.get('deleted_date')
                             if deleted_date:
                                 # Sheets의 monthly_plans status 업데이트
-                                sheets_writer.upsert_topic_status(deleted_date, topic, 'pending')
+                                upsert_result = sheets_writer.upsert_topic_status(deleted_date, topic, 'pending')
+                                if not upsert_result.get('success'):
+                                    st.warning(f"⚠️ 월간 기획 시트 업데이트 실패: {upsert_result.get('error', '알 수 없는 오류')}")
 
                                 # 세션 상태도 업데이트
                                 if st.session_state.get('planned_topics'):

@@ -18,8 +18,79 @@ SCOPES = [
     'https://www.googleapis.com/auth/drive'
 ]
 
-# 시트 컬럼 구조 (기존 DB와 동일)
-COLUMNS = ["No.", "date", "day", "situation", "level1", "level2", "level3", "mommyvoca"]
+# 시트 컬럼 구조 (가독성 개선 버전)
+# 각 레벨을 en/kr/child로 분리하여 셀당 하나의 정보만 저장
+COLUMNS = [
+    "No.", "date", "day", "situation",
+    "level1_en", "level1_kr",
+    "level2_en", "level2_kr", "level2_child",
+    "level3_en", "level3_kr", "level3_child",
+    "mommyvoca"
+]
+
+# 레거시 컬럼 (기존 형식)
+LEGACY_COLUMNS = ["No.", "date", "day", "situation", "level1", "level2", "level3", "mommyvoca"]
+
+
+def parse_level_text(level_text: str) -> dict:
+    """레벨 텍스트를 en, kr, child로 분리합니다.
+
+    Args:
+        level_text: "1️⃣ English...\n한국어...\n2️⃣ ..." 형식
+
+    Returns:
+        {
+            "en": "Let's go! | Put on shoes. | Ready?",
+            "kr": "가자! | 신발 신어. | 준비됐어?",
+            "child": "Yes! / 응! | Ready! / 준비됐어!"  # 없으면 빈 문자열
+        }
+    """
+    import re
+
+    if not level_text or level_text.strip() == "":
+        return {"en": "", "kr": "", "child": ""}
+
+    # ⭐ 기준으로 엄마 파트와 아이 파트 분리
+    parts = level_text.split("⭐")
+    mom_part = parts[0].strip()
+    child_part = parts[1].strip() if len(parts) > 1 else ""
+
+    # 엄마 파트 파싱 (1️⃣, 2️⃣, 3️⃣ 패턴)
+    en_sentences = []
+    kr_sentences = []
+
+    # 이모지 넘버링으로 분리
+    emoji_pattern = re.compile(r'[1-3]️⃣')
+    segments = emoji_pattern.split(mom_part)
+
+    for seg in segments[1:]:  # 첫 번째는 빈 문자열이므로 스킵
+        lines = [l.strip() for l in seg.strip().split('\n') if l.strip()]
+        if lines:
+            en_sentences.append(lines[0])  # 첫 줄: 영어
+            if len(lines) > 1:
+                kr_sentences.append(lines[1])  # 둘째 줄: 한국어
+
+    en_str = " | ".join(en_sentences)
+    kr_str = " | ".join(kr_sentences)
+
+    # 아이 파트 파싱
+    child_str = ""
+    if child_part and "생략" not in child_part:
+        # {아이이름}: 제거
+        child_part = re.sub(r'\{아이이름\}:\s*', '', child_part)
+        lines = [l.strip() for l in child_part.split('\n') if l.strip()]
+
+        # 영어/한국어 쌍으로 묶기
+        child_pairs = []
+        for i in range(0, len(lines), 2):
+            en = lines[i] if i < len(lines) else ""
+            kr = lines[i + 1] if i + 1 < len(lines) else ""
+            if en or kr:
+                child_pairs.append(f"{en} / {kr}")
+
+        child_str = " | ".join(child_pairs)
+
+    return {"en": en_str, "kr": kr_str, "child": child_str}
 
 
 def get_credentials() -> Credentials:
@@ -84,12 +155,12 @@ def get_or_create_spreadsheet(spreadsheet_name: str = "마미톡잉글리시 콘
         # 새로 생성
         spreadsheet = client.create(spreadsheet_name)
 
-        # 첫 번째 시트에 헤더 추가
+        # 첫 번째 시트에 헤더 추가 (새 컬럼 구조: 13개)
         worksheet = spreadsheet.sheet1
-        worksheet.update('A1:H1', [COLUMNS])
+        worksheet.update('A1:M1', [COLUMNS])
 
         # 헤더 스타일 (볼드)
-        worksheet.format('A1:H1', {
+        worksheet.format('A1:M1', {
             'textFormat': {'bold': True},
             'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
         })
@@ -150,15 +221,25 @@ def append_content(
         weekdays = ["월", "화", "수", "목", "금", "토", "일"]
         day_str = weekdays[dt.weekday()]
 
-        # 새 행 데이터
+        # 각 레벨 텍스트 파싱
+        l1 = parse_level_text(level1_text)
+        l2 = parse_level_text(level2_text)
+        l3 = parse_level_text(level3_text)
+
+        # 새 행 데이터 (새 컬럼 구조: 13개)
         new_row = [
             next_no,           # No.
             target_date,       # date
             day_str,           # day
             topic,             # situation
-            level1_text,       # level1
-            level2_text,       # level2
-            level3_text,       # level3
+            l1["en"],          # level1_en
+            l1["kr"],          # level1_kr
+            l2["en"],          # level2_en
+            l2["kr"],          # level2_kr
+            l2["child"],       # level2_child
+            l3["en"],          # level3_en
+            l3["kr"],          # level3_kr
+            l3["child"],       # level3_child
             ""                 # mommyvoca (Canva에서 추가)
         ]
 
@@ -199,7 +280,7 @@ def share_spreadsheet(email: str, spreadsheet_name: str = "마미톡잉글리시
 
 
 def get_all_contents(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> list:
-    """시트의 모든 콘텐츠를 가져옵니다."""
+    """시트의 모든 콘텐츠를 가져옵니다 (새 컬럼 구조)."""
     try:
         spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
         worksheet = spreadsheet.sheet1
@@ -208,42 +289,64 @@ def get_all_contents(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB
         if len(all_values) == 0:
             return []
 
-        # 첫 행이 헤더인지 데이터인지 확인
+        # 첫 행이 헤더인지 확인
         first_row = all_values[0]
         has_header = first_row and first_row[0] == "No."
 
         if has_header:
-            # 헤더가 있으면 2행부터 데이터
             data_rows = all_values[1:]
             start_row = 2
         else:
-            # 헤더가 없으면 1행부터 데이터 (헤더 삽입)
             print("헤더 없음 - 헤더 행 삽입 중...")
             worksheet.insert_row(COLUMNS, 1)
-            data_rows = all_values  # 기존 모든 행이 데이터
+            data_rows = all_values
             start_row = 2
+
+        # 컬럼 수로 신규/레거시 구분 (13개 = 신규, 8개 = 레거시)
+        is_new_format = len(first_row) >= 13 and "level1_en" in first_row
 
         contents = []
         for i, row in enumerate(data_rows, start=start_row):
-            if not row or not row[0]:  # 빈 행 스킵
+            if not row or not row[0]:
                 continue
-            content = {
-                "row_number": i,
-                "no": row[0] if len(row) > 0 else "",
-                "date": row[1] if len(row) > 1 else "",
-                "day": row[2] if len(row) > 2 else "",
-                "situation": row[3] if len(row) > 3 else "",
-                "level1": row[4] if len(row) > 4 else "",
-                "level2": row[5] if len(row) > 5 else "",
-                "level3": row[6] if len(row) > 6 else "",
-                "mommyvoca": row[7] if len(row) > 7 else ""
-            }
+
+            if is_new_format:
+                # 새 컬럼 구조 (13개)
+                content = {
+                    "row_number": i,
+                    "no": row[0] if len(row) > 0 else "",
+                    "date": row[1] if len(row) > 1 else "",
+                    "day": row[2] if len(row) > 2 else "",
+                    "situation": row[3] if len(row) > 3 else "",
+                    "level1_en": row[4] if len(row) > 4 else "",
+                    "level1_kr": row[5] if len(row) > 5 else "",
+                    "level2_en": row[6] if len(row) > 6 else "",
+                    "level2_kr": row[7] if len(row) > 7 else "",
+                    "level2_child": row[8] if len(row) > 8 else "",
+                    "level3_en": row[9] if len(row) > 9 else "",
+                    "level3_kr": row[10] if len(row) > 10 else "",
+                    "level3_child": row[11] if len(row) > 11 else "",
+                    "mommyvoca": row[12] if len(row) > 12 else ""
+                }
+            else:
+                # 레거시 컬럼 구조 (8개)
+                content = {
+                    "row_number": i,
+                    "no": row[0] if len(row) > 0 else "",
+                    "date": row[1] if len(row) > 1 else "",
+                    "day": row[2] if len(row) > 2 else "",
+                    "situation": row[3] if len(row) > 3 else "",
+                    "level1": row[4] if len(row) > 4 else "",
+                    "level2": row[5] if len(row) > 5 else "",
+                    "level3": row[6] if len(row) > 6 else "",
+                    "mommyvoca": row[7] if len(row) > 7 else ""
+                }
             contents.append(content)
 
         return contents
     except Exception as e:
         print(f"get_all_contents 에러: {e}")
-        raise  # 에러를 상위로 전파해서 UI에서 표시
+        raise
 
 
 def delete_content(row_number: int, spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> dict:
@@ -264,12 +367,127 @@ def update_content(
     level3_text: str,
     spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
 ) -> dict:
-    """특정 행의 콘텐츠를 업데이트합니다."""
+    """특정 행의 콘텐츠를 업데이트합니다 (새 컬럼 구조)."""
     try:
         spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
         worksheet = spreadsheet.sheet1
-        worksheet.update(f'E{row_number}:G{row_number}', [[level1_text, level2_text, level3_text]])
+
+        # 각 레벨 텍스트 파싱
+        l1 = parse_level_text(level1_text)
+        l2 = parse_level_text(level2_text)
+        l3 = parse_level_text(level3_text)
+
+        # 새 컬럼 구조로 업데이트 (E~L 컬럼, 8개)
+        worksheet.update(f'E{row_number}:L{row_number}', [[
+            l1["en"], l1["kr"],
+            l2["en"], l2["kr"], l2["child"],
+            l3["en"], l3["kr"], l3["child"]
+        ]])
         return {'success': True, 'row': row_number}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def migrate_to_new_format(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> dict:
+    """기존 레거시 형식을 새 컬럼 구조로 마이그레이션합니다.
+
+    기존: No.|date|day|situation|level1|level2|level3|mommyvoca (8개)
+    신규: No.|date|day|situation|level1_en|level1_kr|level2_en|level2_kr|level2_child|level3_en|level3_kr|level3_child|mommyvoca (13개)
+    """
+    try:
+        spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
+        worksheet = spreadsheet.sheet1
+        all_values = worksheet.get_all_values()
+
+        if len(all_values) == 0:
+            return {'success': True, 'migrated': 0, 'message': '데이터 없음'}
+
+        # 이미 새 형식인지 확인
+        header = all_values[0]
+        if len(header) >= 13 and "level1_en" in header:
+            return {'success': True, 'migrated': 0, 'message': '이미 새 형식입니다'}
+
+        # 헤더 업데이트
+        worksheet.update('A1:M1', [COLUMNS])
+        worksheet.format('A1:M1', {
+            'textFormat': {'bold': True},
+            'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+        })
+
+        # 각 데이터 행 마이그레이션
+        migrated_count = 0
+        for i, row in enumerate(all_values[1:], start=2):
+            if not row or not row[0]:
+                continue
+
+            # 기존 데이터 추출
+            no = row[0] if len(row) > 0 else ""
+            date = row[1] if len(row) > 1 else ""
+            day = row[2] if len(row) > 2 else ""
+            situation = row[3] if len(row) > 3 else ""
+            level1_text = row[4] if len(row) > 4 else ""
+            level2_text = row[5] if len(row) > 5 else ""
+            level3_text = row[6] if len(row) > 6 else ""
+            mommyvoca = row[7] if len(row) > 7 else ""
+
+            # 파싱
+            l1 = parse_level_text(level1_text)
+            l2 = parse_level_text(level2_text)
+            l3 = parse_level_text(level3_text)
+
+            # 새 형식으로 업데이트
+            new_row = [
+                no, date, day, situation,
+                l1["en"], l1["kr"],
+                l2["en"], l2["kr"], l2["child"],
+                l3["en"], l3["kr"], l3["child"],
+                mommyvoca
+            ]
+            worksheet.update(f'A{i}:M{i}', [new_row])
+            migrated_count += 1
+
+        return {
+            'success': True,
+            'migrated': migrated_count,
+            'message': f'{migrated_count}개 행 마이그레이션 완료'
+        }
+
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def add_content_raw(
+    no: int,
+    date: str,
+    day: str,
+    topic: str,
+    level1_en: str,
+    level1_kr: str,
+    level2_en: str,
+    level2_kr: str,
+    level2_child: str,
+    level3_en: str,
+    level3_kr: str,
+    level3_child: str,
+    mommyvoca: str = "",
+    spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
+) -> dict:
+    """새 컬럼 구조로 직접 콘텐츠를 추가합니다 (복구용)."""
+    try:
+        spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
+        worksheet = spreadsheet.sheet1
+
+        new_row = [
+            no, date, day, topic,
+            level1_en, level1_kr,
+            level2_en, level2_kr, level2_child,
+            level3_en, level3_kr, level3_child,
+            mommyvoca
+        ]
+
+        worksheet.append_row(new_row, value_input_option='USER_ENTERED')
+
+        return {'success': True, 'no': no}
     except Exception as e:
         return {'success': False, 'error': str(e)}
 

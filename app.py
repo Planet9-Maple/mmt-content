@@ -1454,8 +1454,12 @@ def render_gen_step3_final():
                             st.warning(f"⚠️ {result.get('message')}")
                             st.session_state.is_saving = False
                         else:
-                            # 상태 업데이트
-                            st.session_state.planned_topics[st.session_state.current_topic_idx]["status"] = "completed"
+                            # 상태 업데이트 (인덱스가 유효한 경우)
+                            if st.session_state.current_topic_idx is not None and st.session_state.planned_topics:
+                                try:
+                                    st.session_state.planned_topics[st.session_state.current_topic_idx]["status"] = "completed"
+                                except (IndexError, KeyError):
+                                    pass
 
                             # 저장 완료 플래그 설정 (중첩 버튼 대신 플래그 사용)
                             st.session_state.save_completed = True
@@ -1466,6 +1470,42 @@ def render_gen_step3_final():
 
                             # 월간 기획 자동 저장 (완료 상태 반영)
                             target_month = datetime.strptime(target_date, "%Y-%m-%d").replace(day=1)
+
+                            # planned_topics에 해당 날짜가 없으면 자동 추가
+                            if st.session_state.planned_topics:
+                                date_exists = any(t.get('date') == target_date for t in st.session_state.planned_topics)
+                                if not date_exists:
+                                    # 요일 계산
+                                    dt = datetime.strptime(target_date, "%Y-%m-%d")
+                                    weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+                                    day_str = weekdays[dt.weekday()]
+                                    # 새 항목 추가
+                                    st.session_state.planned_topics.append({
+                                        'date': target_date,
+                                        'day': day_str,
+                                        'topic': topic,
+                                        'status': 'completed'
+                                    })
+                                    # 날짜순 정렬
+                                    st.session_state.planned_topics.sort(key=lambda x: x.get('date', ''))
+                                else:
+                                    # 기존 항목 상태 업데이트
+                                    for t in st.session_state.planned_topics:
+                                        if t.get('date') == target_date:
+                                            t['status'] = 'completed'
+                                            break
+                            else:
+                                # planned_topics가 비어있으면 새로 생성
+                                dt = datetime.strptime(target_date, "%Y-%m-%d")
+                                weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+                                day_str = weekdays[dt.weekday()]
+                                st.session_state.planned_topics = [{
+                                    'date': target_date,
+                                    'day': day_str,
+                                    'topic': topic,
+                                    'status': 'completed'
+                                }]
+
                             save_monthly_plan(target_month, st.session_state.planned_topics)
 
                             st.session_state.is_saving = False  # 저장 완료
@@ -1626,6 +1666,15 @@ def render_management_view():
                             st.success("삭제되었습니다.")
                             st.session_state.sheets_contents = []
                             del st.session_state[f"confirm_delete_{row_num}"]
+
+                            # 월간 기획 세션 상태도 업데이트 (삭제 반영)
+                            deleted_date = result.get('deleted_date')
+                            if deleted_date and st.session_state.get('planned_topics'):
+                                for topic in st.session_state.planned_topics:
+                                    if topic.get('date') == deleted_date:
+                                        topic['status'] = 'pending'
+                                        break
+
                             st.rerun()
                         else:
                             st.error(f"삭제 실패: {result['error']}")

@@ -221,6 +221,37 @@ def get_recent_topics(months: int = 3, df: Optional[pd.DataFrame] = None) -> pd.
     return recent[["No.", "date", "day", "situation", "category"]]
 
 
+def get_same_month_topics(target_month: int, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """같은 월(과거 연도)의 주제들을 반환합니다.
+
+    예: target_month=4이면 작년/재작년 4월의 모든 주제 반환
+
+    Args:
+        target_month: 조회할 월 (1~12)
+        df: DataFrame. None이면 새로 로드.
+
+    Returns:
+        해당 월의 과거 콘텐츠 DataFrame (No., date, day, situation, category 컬럼)
+    """
+    if df is None:
+        df = get_content_rows()
+    else:
+        df = get_content_rows(df)
+
+    # 해당 월 필터링
+    df = df.copy()
+    df["month"] = pd.to_datetime(df["date"]).dt.month
+    same_month = df[df["month"] == target_month].copy()
+
+    # 카테고리 추가
+    same_month["category"] = same_month["situation"].apply(categorize_topic)
+
+    # 날짜순 정렬 (최신 먼저)
+    same_month = same_month.sort_values("date", ascending=False)
+
+    return same_month[["No.", "date", "day", "situation", "category"]]
+
+
 def get_category_distribution(months: int = 1, df: Optional[pd.DataFrame] = None) -> dict:
     """최근 N개월 카테고리별 콘텐츠 수를 집계합니다.
 

@@ -365,6 +365,17 @@ def step0_suggest(
         already_used_str = "\n## ⚠️ 이번 달 이미 할당된 주제 (피해주세요!)\n"
         already_used_str += "\n".join([f"- {t}" for t in already_used])
 
+    # 같은 월 과거 주제 (DB 학습용)
+    same_month_topics = db_loader.get_same_month_topics(month, df=df)
+    same_month_str = ""
+    if len(same_month_topics) > 0:
+        # 최대 10개까지만 (다양한 예시 제공)
+        for _, row in same_month_topics.head(10).iterrows():
+            year = row['date'].year if hasattr(row['date'], 'year') else ""
+            same_month_str += f"- {year}년: {row['situation']} [{row['category']}]\n"
+    else:
+        same_month_str = "(해당 월 과거 데이터 없음)"
+
     # User message 구성
     user_message = f"""## 발송 정보
 - 날짜: {target_date.strftime('%Y-%m-%d')}
@@ -377,6 +388,9 @@ def step0_suggest(
 
 ## 최근 1개월 카테고리 분포
 {cat_dist_str}
+
+## 📚 같은 월({month}월) 과거 DB 주제 (변형 아이디어 참고용)
+{same_month_str}
 {already_used_str}
 """
 

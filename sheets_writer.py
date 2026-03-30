@@ -560,24 +560,41 @@ def add_content_raw(
 
 
 # ============================================================
-# 월간 기획 저장/로드 (Google Sheets 기반)
+# 월간 기획 저장/로드 (Google Sheets 기반) - 새 구조
+# 각 날짜별로 행 저장, 레벨별 맥락 컬럼 분리
 # ============================================================
 
 PLANS_SHEET_NAME = "monthly_plans"
-PLANS_COLUMNS = ["month", "created_at", "topics_json"]
+# 새 컬럼 구조: 날짜별 행, 레벨별 맥락 분리
+PLANS_COLUMNS = [
+    "date",           # 날짜 (YYYY-MM-DD)
+    "day",            # 요일 (월/화/수...)
+    "topic",          # 주제명
+    "status",         # pending/in_progress/completed
+    "level1_context", # L1 맥락 (장면, 흐름, 엄마말, 아이반응, 학습포인트)
+    "level2_context", # L2 맥락
+    "level3_context", # L3 맥락
+    "updated_at"      # 마지막 수정 시간
+]
 
 
 def get_or_create_plans_worksheet(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"):
-    """월간 기획 시트를 가져오거나 생성합니다."""
+    """월간 기획 시트를 가져오거나 생성합니다 (새 구조)."""
     spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
 
     try:
         worksheet = spreadsheet.worksheet(PLANS_SHEET_NAME)
+        # 기존 시트가 구 형식인지 확인 (3컬럼 = 구형식)
+        header = worksheet.row_values(1)
+        if len(header) <= 3 and header and header[0] == "month":
+            # 구 형식 → 새 형식으로 마이그레이션
+            migrate_plans_to_new_format(spreadsheet_name)
+            worksheet = spreadsheet.worksheet(PLANS_SHEET_NAME)
     except gspread.WorksheetNotFound:
-        # 새 시트 생성
-        worksheet = spreadsheet.add_worksheet(title=PLANS_SHEET_NAME, rows=100, cols=3)
-        worksheet.update('A1:C1', [PLANS_COLUMNS])
-        worksheet.format('A1:C1', {
+        # 새 시트 생성 (8컬럼)
+        worksheet = spreadsheet.add_worksheet(title=PLANS_SHEET_NAME, rows=500, cols=8)
+        worksheet.update('A1:H1', [PLANS_COLUMNS])
+        worksheet.format('A1:H1', {
             'textFormat': {'bold': True},
             'backgroundColor': {'red': 0.85, 'green': 0.92, 'blue': 1.0}
         })
@@ -585,16 +602,63 @@ def get_or_create_plans_worksheet(spreadsheet_name: str = "마미톡잉글리시
     return worksheet
 
 
+def migrate_plans_to_new_format(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> dict:
+    """구 형식(월별 JSON)을 새 형식(날짜별 행)으로 마이그레이션합니다."""
+    try:
+        spreadsheet = get_or_create_spreadsheet(spreadsheet_name)
+        worksheet = spreadsheet.worksheet(PLANS_SHEET_NAME)
+        all_values = worksheet.get_all_values()
+
+        # 구 형식 데이터 추출
+        old_data = []
+        for row in all_values[1:]:
+            if row and len(row) >= 3 and row[0]:
+                try:
+                    topics = json.loads(row[2])
+                    old_data.extend(topics)
+                except:
+                    pass
+
+        # 시트 초기화 (새 헤더)
+        worksheet.clear()
+        worksheet.update('A1:H1', [PLANS_COLUMNS])
+        worksheet.format('A1:H1', {
+            'textFormat': {'bold': True},
+            'backgroundColor': {'red': 0.85, 'green': 0.92, 'blue': 1.0}
+        })
+
+        # 새 형식으로 데이터 추가
+        if old_data:
+            new_rows = []
+            for t in old_data:
+                new_rows.append([
+                    t.get('date', ''),
+                    t.get('day', ''),
+                    t.get('topic', ''),
+                    t.get('status', 'pending'),
+                    t.get('level1_context', ''),
+                    t.get('level2_context', ''),
+                    t.get('level3_context', ''),
+                    datetime.now().isoformat()
+                ])
+            if new_rows:
+                worksheet.append_rows(new_rows, value_input_option='USER_ENTERED')
+
+        return {'success': True, 'migrated': len(old_data)}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
 def save_monthly_plan_to_sheets(
     month: str,
     topics: list,
     spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
 ) -> dict:
-    """월간 기획을 Google Sheets에 저장합니다.
+    """월간 기획을 Google Sheets에 저장합니다 (새 구조: 날짜별 행).
 
     Args:
         month: 월 (YYYY-MM 형식)
-        topics: 주제 리스트
+        topics: 주제 리스트 [{date, day, topic, status, level1_context, ...}, ...]
         spreadsheet_name: 스프레드시트 이름
 
     Returns:
@@ -602,28 +666,37 @@ def save_monthly_plan_to_sheets(
     """
     try:
         worksheet = get_or_create_plans_worksheet(spreadsheet_name)
-
-        # 기존 데이터 확인 (같은 월이 있으면 업데이트)
         all_values = worksheet.get_all_values()
 
-        row_to_update = None
-        for i, row in enumerate(all_values[1:], start=2):  # 헤더 제외
-            if row and row[0] == month:
-                row_to_update = i
-                break
+        # 해당 월의 기존 행 찾기 (삭제 후 재삽입)
+        rows_to_delete = []
+        for i, row in enumerate(all_values[1:], start=2):
+            if row and row[0] and row[0].startswith(month):
+                rows_to_delete.append(i)
 
-        # 데이터 준비
-        created_at = datetime.now().isoformat()
-        topics_json = json.dumps(topics, ensure_ascii=False)
+        # 역순으로 삭제 (인덱스 밀림 방지)
+        for row_num in reversed(rows_to_delete):
+            worksheet.delete_rows(row_num)
 
-        if row_to_update:
-            # 기존 행 업데이트
-            worksheet.update(f'A{row_to_update}:C{row_to_update}', [[month, created_at, topics_json]])
-        else:
-            # 새 행 추가
-            worksheet.append_row([month, created_at, topics_json], value_input_option='USER_ENTERED')
+        # 새 데이터 추가
+        now = datetime.now().isoformat()
+        new_rows = []
+        for t in topics:
+            new_rows.append([
+                t.get('date', ''),
+                t.get('day', ''),
+                t.get('topic', ''),
+                t.get('status', 'pending'),
+                t.get('level1_context', ''),
+                t.get('level2_context', ''),
+                t.get('level3_context', ''),
+                now
+            ])
 
-        return {'success': True, 'month': month}
+        if new_rows:
+            worksheet.append_rows(new_rows, value_input_option='USER_ENTERED')
+
+        return {'success': True, 'month': month, 'count': len(new_rows)}
 
     except Exception as e:
         return {'success': False, 'error': str(e)}
@@ -633,7 +706,7 @@ def load_monthly_plan_from_sheets(
     month: str,
     spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
 ) -> list:
-    """Google Sheets에서 월간 기획을 로드합니다.
+    """Google Sheets에서 월간 기획을 로드합니다 (새 구조).
 
     Args:
         month: 월 (YYYY-MM 형식)
@@ -646,23 +719,84 @@ def load_monthly_plan_from_sheets(
         worksheet = get_or_create_plans_worksheet(spreadsheet_name)
         all_values = worksheet.get_all_values()
 
+        topics = []
         for row in all_values[1:]:  # 헤더 제외
-            if row and row[0] == month:
-                topics_json = row[2] if len(row) > 2 else "[]"
-                return json.loads(topics_json)
+            if row and row[0] and row[0].startswith(month):
+                topics.append({
+                    'date': row[0] if len(row) > 0 else '',
+                    'day': row[1] if len(row) > 1 else '',
+                    'topic': row[2] if len(row) > 2 else '',
+                    'status': row[3] if len(row) > 3 else 'pending',
+                    'level1_context': row[4] if len(row) > 4 else '',
+                    'level2_context': row[5] if len(row) > 5 else '',
+                    'level3_context': row[6] if len(row) > 6 else '',
+                    'updated_at': row[7] if len(row) > 7 else ''
+                })
 
-        return []
+        # 날짜순 정렬
+        topics.sort(key=lambda x: x.get('date', ''))
+        return topics
 
     except Exception as e:
         print(f"월간 기획 로드 실패: {e}")
         return []
 
 
+def update_topic_context(
+    date: str,
+    level1_context: str = None,
+    level2_context: str = None,
+    level3_context: str = None,
+    status: str = None,
+    spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
+) -> dict:
+    """특정 날짜의 레벨별 맥락을 업데이트합니다.
+
+    구조검토 승인 시 Claude 분석 내용 저장용.
+
+    Args:
+        date: 날짜 (YYYY-MM-DD)
+        level1_context: L1 맥락 (장면, 흐름, 엄마말맥락, 아이반응, 학습포인트)
+        level2_context: L2 맥락
+        level3_context: L3 맥락
+        status: 상태 변경 (선택)
+        spreadsheet_name: 스프레드시트 이름
+    """
+    try:
+        worksheet = get_or_create_plans_worksheet(spreadsheet_name)
+        all_values = worksheet.get_all_values()
+
+        for i, row in enumerate(all_values[1:], start=2):
+            if row and row[0] == date:
+                # 업데이트할 값 준비
+                updates = []
+                if status is not None:
+                    updates.append((f'D{i}', status))
+                if level1_context is not None:
+                    updates.append((f'E{i}', level1_context))
+                if level2_context is not None:
+                    updates.append((f'F{i}', level2_context))
+                if level3_context is not None:
+                    updates.append((f'G{i}', level3_context))
+                updates.append((f'H{i}', datetime.now().isoformat()))
+
+                # 일괄 업데이트
+                for cell, value in updates:
+                    worksheet.update(cell, value)
+
+                return {'success': True, 'date': date, 'row': i}
+
+        return {'success': False, 'error': f'{date} 날짜를 찾을 수 없습니다'}
+
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
 def delete_monthly_plan_from_sheets(
     month: str,
     spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
 ) -> dict:
-    """Google Sheets에서 월간 기획을 삭제합니다.
+    """Google Sheets에서 월간 기획을 삭제합니다 (새 구조: 해당 월의 모든 행 삭제).
 
     Args:
         month: 월 (YYYY-MM 형식)
@@ -675,34 +809,40 @@ def delete_monthly_plan_from_sheets(
         worksheet = get_or_create_plans_worksheet(spreadsheet_name)
         all_values = worksheet.get_all_values()
 
-        for i, row in enumerate(all_values[1:], start=2):  # 헤더 제외
-            if row and row[0] == month:
-                worksheet.delete_rows(i)
-                return {'success': True, 'month': month}
+        # 해당 월의 모든 행 찾기
+        rows_to_delete = []
+        for i, row in enumerate(all_values[1:], start=2):
+            if row and row[0] and row[0].startswith(month):
+                rows_to_delete.append(i)
 
-        return {'success': True, 'month': month, 'note': 'not found'}
+        # 역순으로 삭제
+        for row_num in reversed(rows_to_delete):
+            worksheet.delete_rows(row_num)
+
+        return {'success': True, 'month': month, 'deleted_count': len(rows_to_delete)}
 
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
 
 def get_all_saved_months(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> list:
-    """저장된 모든 월 목록을 반환합니다.
+    """저장된 모든 월 목록을 반환합니다 (새 구조: 날짜에서 월 추출).
 
     Returns:
-        [{'month': '2026-03', 'created_at': '...'}, ...]
+        [{'month': '2026-03', 'count': 22}, ...]
     """
     try:
         worksheet = get_or_create_plans_worksheet(spreadsheet_name)
         all_values = worksheet.get_all_values()
 
-        months = []
+        # 날짜에서 월 추출하여 집계
+        month_counts = {}
         for row in all_values[1:]:  # 헤더 제외
-            if row and row[0]:
-                months.append({
-                    'month': row[0],
-                    'created_at': row[1] if len(row) > 1 else ''
-                })
+            if row and row[0] and len(row[0]) >= 7:
+                month = row[0][:7]  # "YYYY-MM" 추출
+                month_counts[month] = month_counts.get(month, 0) + 1
+
+        months = [{'month': m, 'count': c} for m, c in month_counts.items()]
 
         return sorted(months, key=lambda x: x['month'], reverse=True)
 

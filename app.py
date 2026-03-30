@@ -918,6 +918,7 @@ def render_gen_step1_structure_review():
 
     topic_data = st.session_state.planned_topics[st.session_state.current_topic_idx]
     topic = topic_data["topic"]
+    target_date = topic_data["date"]
 
     # 공통 상황
     st.markdown(f"**공통 상황:** {result.get('common_situation', '-')}")
@@ -1039,6 +1040,60 @@ def render_gen_step1_structure_review():
     with col3:
         if st.button("✅ 승인 → 영어 생성 + AI 검수", type="primary", use_container_width=True):
             category = db_loader.categorize_topic(topic)
+
+            # 구조 승인 시 레벨별 맥락을 월간 기획에 저장 (출판용 인사이트)
+            try:
+                import sheets_writer
+                structure = st.session_state.step2_result
+                levels = structure.get("levels", {})
+
+                def format_context(level_data):
+                    """레벨 데이터를 가독성 있는 텍스트로 포맷"""
+                    lines = []
+                    if level_data.get("scene"):
+                        lines.append(f"장면: {level_data['scene']}")
+                    if level_data.get("flow_logic"):
+                        lines.append(f"흐름: {level_data['flow_logic']}")
+
+                    mom_flow = level_data.get("mom_flow", [])
+                    if mom_flow:
+                        lines.append("엄마 말 맥락:")
+                        for i, flow in enumerate(mom_flow, 1):
+                            line_text = flow.get(f"line_{i}", "")
+                            lines.append(f"  {i}️⃣ {line_text}")
+
+                    # 아이 반응
+                    child_resp = level_data.get("child_response")
+                    child_resp_1 = level_data.get("child_response_1")
+                    child_resp_2 = level_data.get("child_response_2")
+                    if child_resp or child_resp_1 or child_resp_2:
+                        lines.append("아이 반응:")
+                        if child_resp_1:
+                            lines.append(f"  ⭐ 반응1: {child_resp_1}")
+                        if child_resp_2:
+                            lines.append(f"  ⭐ 반응2: {child_resp_2}")
+                        if child_resp and child_resp != "없음":
+                            lines.append(f"  ⭐ {child_resp}")
+
+                    if level_data.get("learning_point"):
+                        lines.append(f"학습 포인트: {level_data['learning_point']}")
+
+                    return "\n".join(lines)
+
+                l1_ctx = format_context(levels.get("level_1", {}))
+                l2_ctx = format_context(levels.get("level_2", {}))
+                l3_ctx = format_context(levels.get("level_3", {}))
+
+                # 월간 기획에 맥락 저장
+                sheets_writer.update_topic_context(
+                    date=target_date,
+                    level1_context=l1_ctx,
+                    level2_context=l2_ctx,
+                    level3_context=l3_ctx,
+                    status="in_progress"
+                )
+            except Exception as e:
+                st.warning(f"맥락 저장 실패 (진행에는 영향 없음): {e}")
 
             # Step 1: 영어 생성
             with st.spinner("🟣 Claude가 영어 문장을 생성하고 있어요..."):

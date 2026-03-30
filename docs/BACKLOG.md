@@ -196,6 +196,27 @@ def call_api(...):
 - **내용**: 1️⃣, 2️⃣ 문장 기반 아이 반응 생성, L2/L3 규칙 명시
 - **커밋**: `36350d2`
 
+### RES-004: 맥락(context) 기록 실패
+- **해결일**: 2026-03-30
+- **파일**: `sheets_writer.py:update_topic_context()`
+- **문제**: 날짜가 monthly_plans 시트에 없으면 에러 반환, 새 행 삽입 안 됨
+- **내용**: upsert 로직 추가 - 날짜 없으면 새 행 자동 삽입
+- **커밋**: `970f1df`
+
+### RES-005: 생성 버튼 클릭 시 주제 Sheets 동기화 안 됨
+- **해결일**: 2026-03-30
+- **파일**: `app.py` (생성 버튼 핸들러)
+- **문제**: UI에서 주제 편집 → session_state만 업데이트, Sheets에는 반영 안 됨
+- **내용**: "생성" 버튼 클릭 시 `upsert_topic_status()` 호출 추가
+- **커밋**: `970f1df`
+
+### RES-006: worksheet.update() API 포맷 오류
+- **해결일**: 2026-03-30
+- **파일**: `sheets_writer.py:upsert_topic_status()`, `update_topic_context()`
+- **문제**: `worksheet.update(f'C{i}', topic)` - 2D array 필요한데 string 전달
+- **내용**: `[[value]]` 형식으로 수정
+- **커밋**: `970f1df`
+
 ---
 
 ## 우선순위 매트릭스
@@ -222,3 +243,4 @@ def call_api(...):
 | 날짜 | 작성자 | 내용 |
 |------|--------|------|
 | 2026-03-30 | Claude | 초기 백로그 작성 (코드 리뷰 기반) |
+| 2026-03-30 | Claude | RES-004~006 추가: 맥락 기록, 주제 동기화, API 포맷 수정 |

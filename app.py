@@ -2,7 +2,7 @@
 마미톡잉글리시 콘텐츠 생성 UI
 
 Streamlit 기반 웹 인터페이스
-3개 프로바이더: Gemini(분석) → Claude(생성) → GPT(검수)
+3개 프로바이더: Gemini(주제) → Claude(구조) → GPT(생성) → Claude(검수)
 
 플로우:
 1. 월간 주제 기획 - 한달치 주제 확정
@@ -314,9 +314,9 @@ def main():
 
     # 프로바이더 파이프라인 표시
     st.markdown("""
-    <div style="background: linear-gradient(90deg, #4285F4 0%, #7C3AED 50%, #10A37F 100%);
+    <div style="background: linear-gradient(90deg, #4285F4 0%, #7C3AED 33%, #10A37F 66%, #7C3AED 100%);
                 padding: 8px 16px; border-radius: 8px; color: white; text-align: center; margin-bottom: 20px;">
-        🔵 Gemini (주제) → 🟣 Claude (구조/생성) → 🟢 GPT (검수) → 👩‍💻 관리자 검토
+        🔵 Gemini (주제) → 🟣 Claude (구조) → 🟢 GPT (생성) → 🟣 Claude (검수) → 👩‍💻 관리자
     </div>
     """, unsafe_allow_html=True)
 
@@ -1108,7 +1108,7 @@ def render_gen_step1_structure_review():
                 st.warning(f"맥락 저장 실패 (진행에는 영향 없음): {e}")
 
             # Step 1: 영어 생성
-            with st.spinner("🟣 Claude가 영어 문장을 생성하고 있어요..."):
+            with st.spinner("🟢 GPT가 영어 문장을 생성하고 있어요..."):
                 try:
                     gen_result = pipeline.step3_generate(st.session_state.step2_result, category=category)
                 except Exception as e:
@@ -1116,7 +1116,7 @@ def render_gen_step1_structure_review():
                     return
 
             # Step 2: AI 검수 + 자동 수정 루프
-            with st.spinner("🟢 GPT가 품질을 검수하고 있어요... (문제 발견 시 자동 수정)"):
+            with st.spinner("🟣 Claude가 품질을 검수하고 있어요... (문제 발견 시 자동 수정)"):
                 try:
                     # 자동 수정 루프 사용 (최대 2회 시도)
                     final_gen, review_result, fix_count = pipeline.step4_review_with_auto_fix(
@@ -1133,7 +1133,7 @@ def render_gen_step1_structure_review():
                     if fix_count > 0:
                         st.toast(f"🔄 AI가 {fix_count}회 자동 수정 후 검수 완료!")
 
-                    # GPT 추천안으로 기본 선택 설정
+                    # Claude 추천안으로 기본 선택 설정
                     best_combo = review_result.get("overall_recommendation", {}).get("best_combination", {})
                     for level_key in ["level_1", "level_2", "level_3"]:
                         if level_key in best_combo:
@@ -1162,7 +1162,7 @@ def render_gen_step2_content_with_review():
     if not review_result:
         st.warning("AI 검수 결과가 없습니다. 검수를 실행합니다...")
         # 검수 자동 실행
-        with st.spinner("🟢 GPT가 품질을 검수하고 있어요..."):
+        with st.spinner("🟣 Claude가 품질을 검수하고 있어요..."):
             try:
                 topic_data = st.session_state.planned_topics[st.session_state.current_topic_idx]
                 category = db_loader.categorize_topic(topic_data["topic"])
@@ -1204,11 +1204,11 @@ def render_gen_step2_content_with_review():
             level_review = review_data.get(level_key, {})
             variants_review = level_review.get("variants", {})
 
-            # GPT 추천안 표시
+            # Claude 추천안 표시
             best_pick = level_review.get("best_pick", "A")
             best_reason = level_review.get("best_pick_reason", "")
 
-            st.caption(f"🏆 GPT 추천: **{best_pick}안** - {best_reason}")
+            st.caption(f"🏆 Claude 추천: **{best_pick}안** - {best_reason}")
 
             # A/B/C 선택
             current_selected = st.session_state.selected_variants.get(level_key, "A")
@@ -1349,7 +1349,7 @@ def render_gen_step2_content_with_review():
                             return
 
                     # 2. 재검수 (자동)
-                    with st.spinner(f"🟢 GPT가 재검수하고 있어요..."):
+                    with st.spinner(f"🟣 Claude가 재검수하고 있어요..."):
                         try:
                             new_review_result = pipeline.step4_review(new_gen_result, category=category)
                             st.session_state.step4_result = new_review_result
@@ -1373,7 +1373,7 @@ def render_gen_step2_content_with_review():
     with col2:
         # 전체 재생성 + 재검수 (자동 수정 루프 포함)
         if st.button("🔄 전체 재생성 + 재검수", use_container_width=True, help="모든 레벨을 처음부터 재생성 후 자동 수정 루프 실행"):
-            with st.spinner("🟣 Claude가 재생성 중... 🟢 GPT 검수 + 자동 수정"):
+            with st.spinner("🟢 GPT가 재생성 중... 🟣 Claude 검수 + 자동 수정"):
                 try:
                     # 1. 전체 재생성
                     new_gen_result = pipeline.step3_generate(

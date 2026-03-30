@@ -66,23 +66,21 @@ mommytalk-pipeline/
 
 ## Google Sheets 구조 (sheets_writer.py)
 
-### 콘텐츠 시트 (Sheet1) - 가독성 개선 버전
+### 콘텐츠 시트 (Sheet1) - 원본 DB 형식과 동일
 
-| 컬럼 | 설명 | 예시 |
-|------|------|------|
-| No. | 콘텐츠 번호 | 2 |
-| date | 날짜 (YYYY-MM-DD) | 2026-04-02 |
-| day | 요일 | 목 |
-| situation | 주제명 | 🚶‍♂️산책나가자 |
-| level1_en | L1 영어 (파이프 구분) | Let's go! \| Put on shoes. \| Ready? |
-| level1_kr | L1 한국어 (파이프 구분) | 가자! \| 신발 신어. \| 준비됐어? |
-| level2_en | L2 영어 | ... |
-| level2_kr | L2 한국어 | ... |
-| level2_child | L2 아이반응 | Yes! / 응! \| Ready! / 준비됐어! |
-| level3_en | L3 영어 | ... |
-| level3_kr | L3 한국어 | ... |
-| level3_child | L3 아이반응 | ... |
-| mommyvoca | Canva 카드 URL | ... |
+> **중요**: 콘텐츠 시트는 원본 엑셀 DB(`data/마미톡_컨텐츠_v_2.xlsx`)와 동일한 8컬럼 구조를 사용한다.
+> level1/2/3 컬럼에는 전체 텍스트(이모지넘버링+영어+한국어+아이반응)가 한 셀에 저장된다.
+
+| 컬럼 | 타입 | 설명 | 예시 |
+|------|------|------|------|
+| No. | int | 콘텐츠 고유번호 | 2 |
+| date | str | 발송일 (YYYY-MM-DD) | 2026-04-02 |
+| day | str | 요일 | 목 |
+| situation | str | 주제명 (이모지 포함) | 🚶‍♂️산책나가자 |
+| level1 | str | 레벨1 전체 텍스트 | 1️⃣ Let's go outside!\n나가자!\n\n2️⃣ Put on your shoes.\n신발 신어.\n\n3️⃣ Ready?\n준비됐어?\n\n⭐ {아이이름}: 생략 |
+| level2 | str | 레벨2 전체 텍스트 | (영어+한국어+아이반응 포함) |
+| level3 | str | 레벨3 전체 텍스트 | (영어+한국어+아이반응 포함) |
+| mommyvoca | str | Canva 카드 URL | https://... |
 
 ### 월간 기획 시트 (monthly_plans) - 출판용 인사이트 저장
 

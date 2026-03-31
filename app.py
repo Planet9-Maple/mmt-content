@@ -2,7 +2,7 @@
 마미톡잉글리시 콘텐츠 생성 UI
 
 Streamlit 기반 웹 인터페이스
-3개 프로바이더: Gemini(주제) → Claude Opus(구조/생성) → Gemini Flash(검수)
+3개 프로바이더: Gemini(주제) → Claude Opus(구조/생성) → GPT-4o(검수)
 
 플로우:
 1. 월간 주제 기획 - 한달치 주제 확정
@@ -316,7 +316,7 @@ def main():
     st.markdown("""
     <div style="background: linear-gradient(90deg, #4285F4 0%, #7C3AED 33%, #10A37F 66%, #7C3AED 100%);
                 padding: 8px 16px; border-radius: 8px; color: white; text-align: center; margin-bottom: 20px;">
-        🔵 Gemini (주제) → 🟣 Claude Opus (구조/생성) → 🟢 Gemini Flash (검수) → 👩‍💻 관리자
+        🔵 Gemini (주제) → 🟣 Claude Opus (구조/생성) → 🟢 GPT-4o (검수) → 👩‍💻 관리자
     </div>
     """, unsafe_allow_html=True)
 
@@ -1166,7 +1166,7 @@ def render_gen_step1_structure_review():
                     return
 
             # Step 2: AI 검수 + 자동 수정 루프
-            with st.spinner("🟢 Gemini Flash가 품질을 검수하고 있어요... (문제 발견 시 자동 수정)"):
+            with st.spinner("🟢 GPT-4o가 품질을 검수하고 있어요... (문제 발견 시 자동 수정)"):
                 try:
                     # 자동 수정 루프 사용 (최대 2회 시도)
                     final_gen, review_result, fix_count = pipeline.step4_review_with_auto_fix(
@@ -1212,7 +1212,7 @@ def render_gen_step2_content_with_review():
     if not review_result:
         st.warning("AI 검수 결과가 없습니다. 검수를 실행합니다...")
         # 검수 자동 실행
-        with st.spinner("🟢 Gemini Flash가 품질을 검수하고 있어요..."):
+        with st.spinner("🟢 GPT-4o가 품질을 검수하고 있어요..."):
             try:
                 topic_data = st.session_state.planned_topics[st.session_state.current_topic_idx]
                 category = db_loader.categorize_topic(topic_data["topic"])
@@ -1399,7 +1399,7 @@ def render_gen_step2_content_with_review():
                             return
 
                     # 2. 재검수 (자동)
-                    with st.spinner(f"🟢 Gemini Flash가 재검수하고 있어요..."):
+                    with st.spinner(f"🟢 GPT-4o가 재검수하고 있어요..."):
                         try:
                             new_review_result = pipeline.step4_review(new_gen_result, category=category)
                             st.session_state.step4_result = new_review_result
@@ -1423,7 +1423,7 @@ def render_gen_step2_content_with_review():
     with col2:
         # 전체 재생성 + 재검수 (자동 수정 루프 포함)
         if st.button("🔄 전체 재생성 + 재검수", use_container_width=True, help="모든 레벨을 처음부터 재생성 후 자동 수정 루프 실행"):
-            with st.spinner("🟣 Claude Opus가 재생성 중... 🟢 Gemini Flash 검수 + 자동 수정"):
+            with st.spinner("🟣 Claude Opus가 재생성 중... 🟢 GPT-4o 검수 + 자동 수정"):
                 try:
                     # 1. 전체 재생성
                     new_gen_result = pipeline.step3_generate(

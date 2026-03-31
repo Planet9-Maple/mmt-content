@@ -1099,9 +1099,16 @@ def step4_review_with_auto_fix(
                     if not feedback_by_level[level_key]["has_issues"]:
                         issues = var_data.get("issues", [])
                         if issues:
+                            # issues가 dict 리스트일 경우 문자열로 변환
+                            issue_strs = []
+                            for issue in issues[:3]:
+                                if isinstance(issue, dict):
+                                    issue_strs.append(str(issue.get("issue", issue.get("problem", str(issue)))))
+                                else:
+                                    issue_strs.append(str(issue))
                             feedback_by_level[level_key] = {
                                 "has_issues": True,
-                                "feedback": f"[revise 판정] " + ", ".join(issues[:3]),
+                                "feedback": f"[revise 판정] " + ", ".join(issue_strs),
                                 "sentences": [1, 2, 3]
                             }
                     break

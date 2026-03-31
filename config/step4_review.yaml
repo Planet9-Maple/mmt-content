@@ -1,10 +1,10 @@
 # Step 4: 검수 에이전트 설정
-# 프로바이더: OpenAI GPT (크로스 프로바이더 편향 차단)
-# Claude가 만든 콘텐츠를 GPT가 검수 → 진짜 "외부 검수자" 효과
-# v5: 롤백 + Mom-Reality Test + 동화책 스타일 감지 강화
+# 프로바이더: Google Gemini Flash (크로스 프로바이더 편향 차단 + 속도)
+# Claude가 만든 콘텐츠를 Gemini가 검수 → 진짜 "외부 검수자" 효과
+# v6: Gemini Flash로 변경 (속도 개선)
 
-provider: "gpt"
-model: "gpt-5.2"
+provider: "gemini"
+model: "gemini-2.0-flash"
 temperature: 0.2
 max_tokens: 4000
 

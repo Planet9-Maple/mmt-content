@@ -701,6 +701,11 @@ def render_topic_list():
                         st.session_state.planned_topics[idx]["suggestions"] = new_suggestions
                         # 첫 번째 추천으로 주제 업데이트
                         st.session_state.planned_topics[idx]["topic"] = new_suggestions[0].get("topic", topic['topic'])
+
+                        # Sheets에 suggestions 저장
+                        import sheets_writer
+                        sheets_writer.update_topic_suggestions(topic['date'], new_suggestions)
+
                         st.success(f"✅ {len(new_suggestions)}개의 새 추천을 받았습니다!")
                         st.rerun()
                     else:

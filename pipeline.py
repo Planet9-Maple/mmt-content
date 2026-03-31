@@ -506,10 +506,14 @@ def step2_regenerate_targeted(
     existing_levels = existing_result.get("levels", {})
     existing_level_data = existing_levels.get(target_level, {})
 
-    # 기존 엄마 말 맥락
-    existing_mom_flow = existing_level_data.get("mom_flow", [])
+    # 기존 엄마 말 맥락 (새 형식: mom_sentences)
+    existing_mom_sentences = existing_level_data.get("mom_sentences", [])
+    if not existing_mom_sentences:
+        # 이전 형식 호환
+        existing_mom_sentences = existing_level_data.get("mom_flow", [])
+
     existing_mom_text = ""
-    for i, line in enumerate(existing_mom_flow, 1):
+    for i, line in enumerate(existing_mom_sentences, 1):
         if isinstance(line, dict):
             text = line.get(f"line_{i}", str(line))
         else:
@@ -569,20 +573,19 @@ def step2_regenerate_targeted(
 
 ## 출력 형식
 수정된 {target_level}만 JSON으로 출력하세요. 다른 레벨은 출력하지 마세요.
+**수정 대상 문장만 변경하고, 나머지 문장은 기존 그대로 유지하세요.**
 
 {{
   "levels": {{
     "{target_level}": {{
       "scene": "...",
-      "flow_logic": "...",
-      "mom_flow": [
-        {{"line_1": "..."}},
-        {{"line_2": "..."}},
-        {{"line_3": "..."}}
+      "mom_sentences": [
+        "1번 문장 (한국어 맥락)",
+        "2번 문장 (한국어 맥락)",
+        "3번 문장 (한국어 맥락)"
       ],
       "child_response_1": "...",
-      "child_response_2": "...",
-      "learning_point": "..."
+      "child_response_2": "..."
     }}
   }}
 }}
@@ -602,7 +605,38 @@ def step2_regenerate_targeted(
         if level_key == target_level:
             new_level_data = regenerated.get("levels", {}).get(target_level, {})
             if new_level_data:
-                final_result["levels"][level_key] = new_level_data
+                # 특정 문장만 수정하는 경우, 문장 단위로 병합
+                if preserve_sentences:
+                    merged_level = existing_level_data.copy()
+
+                    # scene 업데이트 (피드백에서 요청한 경우만)
+                    if new_level_data.get("scene"):
+                        merged_level["scene"] = new_level_data["scene"]
+
+                    # mom_sentences 문장별 병합
+                    new_mom_sentences = new_level_data.get("mom_sentences", [])
+                    merged_sentences = list(existing_mom_sentences)  # 복사
+
+                    for i in target_sentences:
+                        if i <= len(new_mom_sentences) and i <= 3:
+                            idx = i - 1
+                            if idx < len(merged_sentences):
+                                merged_sentences[idx] = new_mom_sentences[idx]
+                            elif idx < len(new_mom_sentences):
+                                merged_sentences.append(new_mom_sentences[idx])
+
+                    merged_level["mom_sentences"] = merged_sentences
+
+                    # 아이 반응 (피드백에서 요청한 경우만 업데이트)
+                    if new_level_data.get("child_response_1"):
+                        merged_level["child_response_1"] = new_level_data["child_response_1"]
+                    if new_level_data.get("child_response_2"):
+                        merged_level["child_response_2"] = new_level_data["child_response_2"]
+
+                    final_result["levels"][level_key] = merged_level
+                else:
+                    # 전체 수정인 경우 그대로 교체
+                    final_result["levels"][level_key] = new_level_data
             else:
                 final_result["levels"][level_key] = existing_levels.get(level_key, {})
         else:
@@ -784,7 +818,85 @@ def step3_regenerate_targeted(
         if level_key == target_level:
             # 재생성된 레벨 사용
             new_level_data = regenerated.get("levels", {}).get(target_level, {})
-            if new_level_data:
+            if new_level_data and preserve_sentences:
+                # 특정 문장만 수정하는 경우, 문장 단위로 병합
+                merged_level = {"variants": {}}
+                new_variants = new_level_data.get("variants", {})
+
+                for variant_key in ["A", "B", "C"]:
+                    existing_var = existing_variants.get(variant_key, {})
+                    new_var = new_variants.get(variant_key, {})
+
+                    if not new_var:
+                        merged_level["variants"][variant_key] = existing_var
+                        continue
+
+                    merged_var = existing_var.copy()
+
+                    # mom_en 문장별 병합
+                    existing_mom_en = existing_var.get("mom_en", [])
+                    new_mom_en = new_var.get("mom_en", [])
+                    merged_mom_en = list(existing_mom_en)
+                    for i in target_sentences:
+                        idx = i - 1
+                        if idx < len(new_mom_en):
+                            if idx < len(merged_mom_en):
+                                merged_mom_en[idx] = new_mom_en[idx]
+                            else:
+                                merged_mom_en.append(new_mom_en[idx])
+                    merged_var["mom_en"] = merged_mom_en
+
+                    # mom_kr 문장별 병합
+                    existing_mom_kr = existing_var.get("mom_kr", [])
+                    new_mom_kr = new_var.get("mom_kr", [])
+                    merged_mom_kr = list(existing_mom_kr)
+                    for i in target_sentences:
+                        idx = i - 1
+                        if idx < len(new_mom_kr):
+                            if idx < len(merged_mom_kr):
+                                merged_mom_kr[idx] = new_mom_kr[idx]
+                            else:
+                                merged_mom_kr.append(new_mom_kr[idx])
+                    merged_var["mom_kr"] = merged_mom_kr
+
+                    # admin_text 재생성 (병합된 문장으로)
+                    admin_lines = []
+                    for i, (en, kr) in enumerate(zip(merged_mom_en, merged_mom_kr), 1):
+                        admin_lines.append(f"{i}️⃣ {en}")
+                    admin_lines.append("")
+                    for kr in merged_mom_kr:
+                        admin_lines.append(kr)
+
+                    # 아이 반응 처리
+                    child_en_1 = new_var.get("child_en_1") or existing_var.get("child_en_1")
+                    child_kr_1 = new_var.get("child_kr_1") or existing_var.get("child_kr_1")
+                    child_en_2 = new_var.get("child_en_2") or existing_var.get("child_en_2")
+                    child_kr_2 = new_var.get("child_kr_2") or existing_var.get("child_kr_2")
+
+                    if child_en_1:
+                        admin_lines.append("")
+                        admin_lines.append(f"⭐ {{아이이름}}:")
+                        admin_lines.append(child_en_1)
+                        admin_lines.append(child_kr_1 or "")
+                        if child_en_2:
+                            admin_lines.append("")
+                            admin_lines.append(child_en_2)
+                            admin_lines.append(child_kr_2 or "")
+                    else:
+                        admin_lines.append("")
+                        admin_lines.append("⭐ {아이이름}: 생략")
+
+                    merged_var["admin_text"] = "\n".join(admin_lines)
+                    merged_var["child_en_1"] = child_en_1
+                    merged_var["child_kr_1"] = child_kr_1
+                    merged_var["child_en_2"] = child_en_2
+                    merged_var["child_kr_2"] = child_kr_2
+
+                    merged_level["variants"][variant_key] = merged_var
+
+                final_result["levels"][level_key] = merged_level
+            elif new_level_data:
+                # 전체 수정인 경우 그대로 교체
                 final_result["levels"][level_key] = new_level_data
             else:
                 # 재생성 실패 시 기존 유지

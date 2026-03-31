@@ -672,6 +672,42 @@ def render_topic_list():
 
     # 주제 테이블
     for idx, topic in filtered_topics:
+        # 새 추천 버튼 핸들러
+        if st.session_state.get(f"regenerate_suggestions_{idx}", False):
+            # 플래그 초기화
+            del st.session_state[f"regenerate_suggestions_{idx}"]
+
+            # Gemini로 새 추천 받기
+            with st.spinner(f"🔵 Gemini가 {topic['date']} 주제를 추천하고 있어요..."):
+                try:
+                    from datetime import datetime
+                    import pipeline
+
+                    date_obj = datetime.strptime(topic['date'], "%Y-%m-%d")
+
+                    # 이미 사용된 주제 목록
+                    already_used = [t['topic'] for t in topics if t.get('topic') and t['topic'] != topic['topic']]
+
+                    result = pipeline.suggest_topics(
+                        date=date_obj,
+                        day_of_week=topic['day'],
+                        special_note="",
+                        weather_note="",
+                        already_used=already_used
+                    )
+                    new_suggestions = result.get("suggestions", [])
+
+                    if new_suggestions:
+                        st.session_state.planned_topics[idx]["suggestions"] = new_suggestions
+                        # 첫 번째 추천으로 주제 업데이트
+                        st.session_state.planned_topics[idx]["topic"] = new_suggestions[0].get("topic", topic['topic'])
+                        st.success(f"✅ {len(new_suggestions)}개의 새 추천을 받았습니다!")
+                        st.rerun()
+                    else:
+                        st.warning("추천을 받지 못했습니다. 직접 입력해주세요.")
+                except Exception as e:
+                    st.error(f"추천 생성 실패: {e}")
+
         is_review = topic.get("is_review", False)
 
         status_emoji = {
@@ -741,16 +777,22 @@ def render_topic_list():
                         if selected != topic["topic"]:
                             st.session_state.planned_topics[idx]["topic"] = selected
                 else:
-                    # suggestions 없으면 기존 텍스트 입력
-                    new_topic = st.text_input(
-                        "주제",
-                        value=topic["topic"],
-                        key=f"topic_{idx}",
-                        label_visibility="collapsed",
-                        placeholder="주제를 입력하세요"
-                    )
-                    if new_topic != topic["topic"]:
-                        st.session_state.planned_topics[idx]["topic"] = new_topic
+                    # suggestions 없으면 텍스트 입력 + 새 추천 버튼
+                    subcol1, subcol2 = st.columns([4, 1])
+                    with subcol1:
+                        new_topic = st.text_input(
+                            "주제",
+                            value=topic["topic"],
+                            key=f"topic_{idx}",
+                            label_visibility="collapsed",
+                            placeholder="주제를 입력하세요"
+                        )
+                        if new_topic != topic["topic"]:
+                            st.session_state.planned_topics[idx]["topic"] = new_topic
+                    with subcol2:
+                        if st.button("🔄", key=f"refresh_{idx}", help="Gemini로 새 주제 추천 받기"):
+                            st.session_state[f"regenerate_suggestions_{idx}"] = True
+                            st.rerun()
 
         with col4:
             if is_review:

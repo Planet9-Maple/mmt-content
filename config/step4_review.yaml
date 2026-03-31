@@ -1,10 +1,10 @@
 # Step 4: 검수 에이전트 설정
-# 프로바이더: Anthropic Claude (크로스 프로바이더 편향 차단)
-# GPT가 만든 콘텐츠를 Claude가 검수 → 진짜 "외부 검수자" 효과
-# v4: Mom-Reality Test + 동화책 스타일 감지 강화
+# 프로바이더: OpenAI GPT (크로스 프로바이더 편향 차단)
+# Claude가 만든 콘텐츠를 GPT가 검수 → 진짜 "외부 검수자" 효과
+# v5: 롤백 + Mom-Reality Test + 동화책 스타일 감지 강화
 
-provider: "claude"
-model: "claude-sonnet-4-20250514"
+provider: "gpt"
+model: "gpt-4o"
 temperature: 0.2
 max_tokens: 4000
 

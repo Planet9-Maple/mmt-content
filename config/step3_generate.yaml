@@ -1,10 +1,10 @@
 # Step 3: 문장 생성 에이전트 설정
-# 프로바이더: OpenAI GPT-4o (일상 구어체에 강점, 덜 문학적)
-# v4: 동화책 스타일 방지 + 모델 교체
+# 프로바이더: Anthropic Claude (영어 산문 품질 최상)
+# v5: 롤백 - Claude가 생성, GPT가 검수
 
-provider: "gpt"
-model: "gpt-4o"
-temperature: 0.5
+provider: "claude"
+model: "claude-sonnet-4-20250514"
+temperature: 0.7
 max_tokens: 5000
 
 system_prompt: |

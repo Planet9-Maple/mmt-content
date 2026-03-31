@@ -981,18 +981,21 @@ def render_gen_step1_structure_review():
 
     # 레벨별 구조 표시 + 개별 피드백
     levels = result.get("levels", {})
-    level_names = {"level_1": "Level 1 (2-3세)", "level_2": "Level 2 (3-5세)", "level_3": "Level 3 (4-6세)"}
+    level_names = {"level_1": "Level 1 (입문)", "level_2": "Level 2 (초급)", "level_3": "Level 3 (중급)"}
 
     for level_key, level_name in level_names.items():
         level_data = levels.get(level_key, {})
 
         with st.expander(f"📖 {level_name}", expanded=True):
             st.markdown(f"**장면:** {level_data.get('scene', '-')}")
-            st.markdown(f"**흐름:** {level_data.get('flow_logic', '-')}")
 
             st.markdown("**엄마 말 맥락:**")
-            mom_flow = level_data.get("mom_flow", [])
-            for i, line in enumerate(mom_flow, 1):
+            # 새 포맷: mom_sentences (단순 문자열 배열)
+            mom_sentences = level_data.get("mom_sentences", [])
+            if not mom_sentences:
+                # 이전 포맷 호환: mom_flow
+                mom_sentences = level_data.get("mom_flow", [])
+            for i, line in enumerate(mom_sentences, 1):
                 if isinstance(line, dict):
                     text = line.get(f"line_{i}", str(line))
                 else:
@@ -1006,8 +1009,6 @@ def render_gen_step1_structure_review():
                 resp2 = level_data.get("child_response_2", "-")
                 st.write(f"  ⭐ 반응1: {resp1}")
                 st.write(f"  ⭐ 반응2: {resp2}")
-
-            st.markdown(f"**학습 포인트:** {level_data.get('learning_point', '-')}")
 
             # ===== 레벨별 피드백 섹션 =====
             st.markdown("---")
@@ -1108,14 +1109,19 @@ def render_gen_step1_structure_review():
                     lines = []
                     if level_data.get("scene"):
                         lines.append(f"장면: {level_data['scene']}")
-                    if level_data.get("flow_logic"):
-                        lines.append(f"흐름: {level_data['flow_logic']}")
 
-                    mom_flow = level_data.get("mom_flow", [])
-                    if mom_flow:
+                    # 새 포맷: mom_sentences (단순 문자열 배열)
+                    mom_sentences = level_data.get("mom_sentences", [])
+                    if not mom_sentences:
+                        # 이전 포맷 호환: mom_flow
+                        mom_sentences = level_data.get("mom_flow", [])
+                    if mom_sentences:
                         lines.append("엄마 말 맥락:")
-                        for i, flow in enumerate(mom_flow, 1):
-                            line_text = flow.get(f"line_{i}", "")
+                        for i, sentence in enumerate(mom_sentences, 1):
+                            if isinstance(sentence, dict):
+                                line_text = sentence.get(f"line_{i}", str(sentence))
+                            else:
+                                line_text = str(sentence)
                             lines.append(f"  {i}️⃣ {line_text}")
 
                     # 아이 반응
@@ -1130,9 +1136,6 @@ def render_gen_step1_structure_review():
                             lines.append(f"  ⭐ 반응2: {child_resp_2}")
                         if child_resp and child_resp != "없음":
                             lines.append(f"  ⭐ {child_resp}")
-
-                    if level_data.get("learning_point"):
-                        lines.append(f"학습 포인트: {level_data['learning_point']}")
 
                     return "\n".join(lines)
 
@@ -1239,7 +1242,7 @@ def render_gen_step2_content_with_review():
     st.divider()
 
     # 레벨별 콘텐츠 + AI 검수 점수 표시
-    level_tabs = st.tabs(["Level 1 (2-3세)", "Level 2 (3-5세)", "Level 3 (4-6세)"])
+    level_tabs = st.tabs(["Level 1 (입문)", "Level 2 (초급)", "Level 3 (중급)"])
     level_names = {"level_1": "Level 1", "level_2": "Level 2", "level_3": "Level 3"}
 
     review_data = review_result.get("review", {})

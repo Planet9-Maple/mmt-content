@@ -212,7 +212,7 @@ def call_gpt(
 
     response = client.chat.completions.create(
         model=model,
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
         temperature=temperature,
         response_format={"type": "json_object"},
         messages=[

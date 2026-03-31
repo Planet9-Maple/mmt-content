@@ -4,7 +4,7 @@
 # v5: 롤백 + Mom-Reality Test + 동화책 스타일 감지 강화
 
 provider: "gpt"
-model: "gpt-5"
+model: "gpt-5.2"
 temperature: 0.2
 max_tokens: 4000
 

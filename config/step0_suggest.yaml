@@ -1,8 +1,9 @@
 # Step 0: 주제 제안 에이전트 설정
-# 프로바이더: Google Gemini (분석력 최상)
+# 프로바이더: Anthropic Claude Opus 4.7 (최상위 모델, 분석력 #1)
+# 2026-04-27 업데이트: Gemini → Claude Opus 4.7
 
-provider: "gemini"
-model: "gemini-2.5-flash"
+provider: "claude"
+model: "claude-opus-4-7"
 temperature: 0.6
 max_tokens: 2000
 

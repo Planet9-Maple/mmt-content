@@ -2,7 +2,7 @@
 
 ## 프로젝트 한줄 요약
 
-한국 엄마-아이 일상 영어 대화 콘텐츠를 레벨별(L1/L2/L3)로 자동 생성하는 멀티스텝 AI 파이프라인 + Streamlit 웹 UI. 3개 프로바이더(Google, Anthropic, OpenAI)의 최적 모델을 스텝별로 배치.
+한국 엄마-아이 일상 영어 대화 콘텐츠를 레벨별(L1/L2/L3)로 자동 생성하는 멀티스텝 AI 파이프라인 + Streamlit 웹 UI. 2개 프로바이더(Anthropic Claude Opus 4.7 + OpenAI GPT-5.5)의 최고 모델을 스텝별로 배치. (2026-04-28 업데이트)
 
 ## 비즈니스 맥락
 
@@ -113,32 +113,31 @@ mommytalk-pipeline/
 
 ```
 Step 0 (주제 제안) → 담당자 선택 → Step 1 (랭킹) → Step 2 (구조) → Step 3 (생성 ×3안) → Step 4 (검수)
-  [Gemini]                        [Gemini]        [Claude]       [Claude]           [GPT]
+  [Claude Opus 4.7]              [Claude Opus 4.7] [Claude Opus 4.7] [Claude Opus 4.7]  [GPT-5.5]
 ```
 
 각 스텝은 독립된 API 호출. 이전 스텝의 JSON 출력이 다음 스텝의 user message로 전달된다.
 
-### 멀티 프로바이더 모델 배치 (품질 최적화)
+### 모델 배치 (2026-04-28 업데이트)
 
 | Step | 역할 | 모델 | 프로바이더 | temp | 선정 이유 |
 |------|------|------|-----------|------|----------|
-| 0 | 주제 제안 | `gemini-3.1-pro` | Google | 0.5 | 분석력 #1 (Intelligence Index 공동 1위) + 2M 컨텍스트로 DB 전체를 한 번에 분석 가능 |
-| 1 | 주제 랭킹 | `gemini-3.1-pro` | Google | 0.2 | Step 0과 동일 모델로 컨텍스트 재사용. 순수 데이터 분석 태스크에 최적 |
-| 2 | 구조 설계 | `claude-opus-4-6` | Anthropic | 0.4 | 복잡한 제약 조건("영어 생성 금지") 준수력 최상. 교육적 깊이 설계에 적합 |
-| 3 | 문장 생성 | `claude-opus-4-6` | Anthropic | 0.7 | 영어 자연 산문 품질 업계 #1. 원어민 엄마 톤의 따뜻한 대화체에 최적화. 128K 출력 |
-| 4 | 검수 | `gpt-5.2` | OpenAI | 0.2 | **크로스 프로바이더 편향 차단**: Claude가 만든 콘텐츠를 다른 모델이 검수해야 진짜 "외부 검수자" 효과 |
+| 0 | 주제 제안 | `claude-opus-4-7` | Anthropic | - | 최상위 모델, 분석력 #1, 1M 컨텍스트 (temp 미지원) |
+| 1 | 주제 랭킹 | `claude-opus-4-7` | Anthropic | - | 동일 모델로 일관성 유지 |
+| 2 | 구조 설계 | `claude-opus-4-7` | Anthropic | - | 복잡한 제약 조건 준수력 최상. 교육적 깊이 설계에 적합 |
+| 3 | 문장 생성 | `claude-opus-4-7` | Anthropic | - | 영어 자연 산문 품질 업계 #1. 원어민 엄마 톤의 따뜻한 대화체에 최적화. 128K 출력 |
+| 4 | 검수 | `gpt-5.5` | OpenAI | 0.2 | **크로스 프로바이더 편향 차단**: Claude가 만든 콘텐츠를 GPT가 검수해야 진짜 "외부 검수자" 효과 |
+
+> **Note**: Claude Opus 4.7과 GPT-5.5 모두 temperature 파라미터를 지원하지 않음. pipeline.py에서 자동 감지하여 제거함.
 
 ### 크로스 프로바이더 편향 차단 전략
 
-Step 3(생성)과 Step 4(검수)를 반드시 다른 프로바이더로 배치한다. 이유:
+Step 0~3(생성)과 Step 4(검수)를 반드시 다른 프로바이더로 배치한다. 이유:
 - 같은 모델 계열은 유사한 언어 패턴을 "자연스럽다"고 평가하는 경향이 있음
 - Claude가 선호하는 문장 구조를 Claude 검수자가 무의식적으로 높게 평가하는 편향 존재
-- 다른 프로바이더의 검수로 이 편향을 깨뜨림
+- 다른 프로바이더(OpenAI GPT)의 검수로 이 편향을 깨뜨림
 
-**교체 시 규칙**: Step 3 모델을 바꾸면 Step 4도 반드시 다른 프로바이더로 교체.
-- Step 3 = Claude → Step 4 = GPT 또는 Gemini
-- Step 3 = GPT → Step 4 = Claude 또는 Gemini
-- Step 3 = Gemini → Step 4 = Claude 또는 GPT
+**현재 구성**: Claude Opus 4.7(생성) → GPT-5.5(검수)
 
 ### 재생성 로직
 - Step 4에서 reject → Step 3 재실행 (temp +0.1씩 증가)
@@ -170,63 +169,44 @@ Step 3(생성)과 Step 4(검수)를 반드시 다른 프로바이더로 배치�
 
 ## 구현 시 주의사항
 
-### API 호출 — 3개 프로바이더
+### API 호출 — 2개 프로바이더 (2026-04-28 업데이트)
 
 ```python
 # 프로바이더별 클라이언트 초기화
 import anthropic
 import openai
-import google.generativeai as genai
 
-# Anthropic (Step 2, 3)
+# Anthropic (Step 0, 1, 2, 3)
 anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-# OpenAI (Step 4)
+# OpenAI (Step 4 - 검수)
 openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Google Gemini (Step 0, 1)
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 ```
 
-**모델 스트링 (2026년 3월 기준)**:
-- Gemini: `gemini-3.1-pro` (최신 GA 버전 확인 필요)
-- Claude: `claude-opus-4-6` (extended thinking 비활성화)
-- GPT: `gpt-5.2` (json_object 모드 지원)
+**모델 스트링 (2026년 4월 기준)**:
+- Claude: `claude-opus-4-7` (최신 Opus, 1M 컨텍스트, 128K 출력, temperature 미지원)
+- GPT: `gpt-5.5` (최신 플래그십, 검수용)
 
 **중요: 모델 스트링은 릴리즈에 따라 변경될 수 있음. 각 프로바이더의 최신 문서를 확인하고, config YAML에서 관리.**
 
 ### 프로바이더별 API 호출 패턴
 
 ```python
-def call_gemini(system_prompt: str, user_message: str, config: dict) -> dict:
-    """Step 0, 1용 — Google Gemini API"""
-    model = genai.GenerativeModel(
-        model_name=config['model'],
-        system_instruction=system_prompt
-    )
-    response = model.generate_content(
-        user_message,
-        generation_config=genai.GenerationConfig(
-            temperature=config['temperature'],
-            max_output_tokens=config['max_tokens'],
-            response_mime_type="application/json"
-        )
-    )
-    return json.loads(response.text)
-
 def call_claude(system_prompt: str, user_message: str, config: dict) -> dict:
-    """Step 2, 3용 — Anthropic Claude API"""
+    """Step 0, 1, 2, 3용 — Anthropic Claude API
+    Note: Claude Opus 4.7은 temperature 미지원 (adaptive thinking 사용)
+    """
+    # claude-opus-4-7은 temperature를 전달하지 않음
     response = anthropic_client.messages.create(
         model=config['model'],
         max_tokens=config['max_tokens'],
-        temperature=config['temperature'],
         system=system_prompt,
         messages=[{"role": "user", "content": user_message}]
     )
     return json.loads(response.content[0].text)
 
 def call_gpt(system_prompt: str, user_message: str, config: dict) -> dict:
-    """Step 4용 — OpenAI GPT API"""
+    """Step 4용 — OpenAI GPT API (검수)"""
     response = openai_client.chat.completions.create(
         model=config['model'],
         temperature=config['temperature'],
@@ -286,10 +266,10 @@ pip install anthropic openai google-generativeai pandas openpyxl streamlit pyyam
 ```
 
 ```env
-# .env
-ANTHROPIC_API_KEY=sk-ant-...       # Step 2, 3 (Claude Opus 4.6)
-OPENAI_API_KEY=sk-...              # Step 4 (GPT-5.2)
-GOOGLE_API_KEY=AI...               # Step 0, 1 (Gemini 3.1 Pro)
+# .env (2026-04-28 업데이트)
+ANTHROPIC_API_KEY=sk-ant-...       # Step 0, 1, 2, 3 (Claude Opus 4.7)
+OPENAI_API_KEY=sk-...              # Step 4 (GPT-5.5 - 검수)
+# GOOGLE_API_KEY=AI...             # 현재 미사용 (필요 시 활성화)
 ```
 
 ## 코딩 컨벤션

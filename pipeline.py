@@ -1,10 +1,11 @@
 """
 마미톡잉글리시 콘텐츠 생성 파이프라인
 
-5스텝 순차 실행 엔진 (3개 프로바이더 사용):
-- Step 0, 1: Google Gemini (분석)
-- Step 2, 3: Anthropic Claude (생성)
-- Step 4: OpenAI GPT (검수 - 크로스 프로바이더 편향 차단)
+5스텝 순차 실행 엔진 (2개 프로바이더 사용):
+- Step 0, 1, 2, 3: Anthropic Claude Opus 4.7 (주제/분석/구조/생성)
+- Step 4: OpenAI GPT-5.5 (검수 - 크로스 프로바이더 편향 차단)
+
+2026-04-28 업데이트: 전 스텝 Claude Opus 4.7, 검수 GPT-5.5
 """
 
 import argparse
@@ -170,24 +171,37 @@ def call_gemini(
 def call_claude(
     system_prompt: str,
     user_message: str,
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "claude-opus-4-7",
     temperature: float = 0.5,
     max_tokens: int = 4000
 ) -> str:
-    """Anthropic Claude API 호출 (Step 2, 3)."""
+    """Anthropic Claude API 호출 (Step 0, 1, 2, 3).
+
+    Note: Claude Opus 4.7은 temperature, top_p, top_k를 지원하지 않음.
+    해당 모델에서는 이 파라미터들을 제거하고 호출.
+    """
     import anthropic
 
     client = anthropic.Anthropic(api_key=get_api_key("ANTHROPIC_API_KEY"))
 
-    logger.info(f"{PROVIDER_EMOJI['claude']} Claude API 호출: {model}, temp={temperature}")
-
-    response = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_message}]
-    )
+    # Claude Opus 4.7은 temperature를 지원하지 않음
+    if "opus-4-7" in model or "opus-4.7" in model:
+        logger.info(f"{PROVIDER_EMOJI['claude']} Claude API 호출: {model} (adaptive thinking)")
+        response = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}]
+        )
+    else:
+        logger.info(f"{PROVIDER_EMOJI['claude']} Claude API 호출: {model}, temp={temperature}")
+        response = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}]
+        )
 
     # 토큰 사용량 로깅
     usage = response.usage
@@ -199,27 +213,43 @@ def call_claude(
 def call_gpt(
     system_prompt: str,
     user_message: str,
-    model: str = "gpt-4o",
+    model: str = "gpt-5.5",
     temperature: float = 0.5,
     max_tokens: int = 4000
 ) -> str:
-    """OpenAI GPT API 호출 (Step 4)."""
+    """OpenAI GPT API 호출 (Step 4).
+
+    Note: GPT-5.5는 temperature를 지원하지 않음 (기본값 1만 허용).
+    해당 모델에서는 temperature 파라미터를 제거하고 호출.
+    """
     from openai import OpenAI
 
     client = OpenAI(api_key=get_api_key("OPENAI_API_KEY"))
 
-    logger.info(f"{PROVIDER_EMOJI['gpt']} GPT API 호출: {model}, temp={temperature}")
-
-    response = client.chat.completions.create(
-        model=model,
-        max_completion_tokens=max_tokens,
-        temperature=temperature,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
-        ]
-    )
+    # GPT-5.5는 temperature를 지원하지 않음
+    if "gpt-5.5" in model or "gpt-5.4" in model:
+        logger.info(f"{PROVIDER_EMOJI['gpt']} GPT API 호출: {model} (default temp)")
+        response = client.chat.completions.create(
+            model=model,
+            max_completion_tokens=max_tokens,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ]
+        )
+    else:
+        logger.info(f"{PROVIDER_EMOJI['gpt']} GPT API 호출: {model}, temp={temperature}")
+        response = client.chat.completions.create(
+            model=model,
+            max_completion_tokens=max_tokens,
+            temperature=temperature,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ]
+        )
 
     # 토큰 사용량 로깅
     usage = response.usage
@@ -921,7 +951,7 @@ def step4_review(
 ) -> dict:
     """Step 4: 품질 검수 및 점수화 (GPT로 크로스 검수)."""
     logger.info("=" * 50)
-    logger.info("Step 4: 검수 시작 (GPT - 크로스 프로바이더 편향 차단)")
+    logger.info("Step 4: 검수 시작 (GPT-5.5 - 크로스 프로바이더 편향 차단)")
 
     config = load_config(4)
 
@@ -1287,7 +1317,7 @@ def run_pipeline(
     """
     logger.info("=" * 60)
     logger.info("마미톡잉글리시 파이프라인 시작")
-    logger.info("🔵 Gemini → 🟣 Claude → 🟢 GPT")
+    logger.info("🟣 Claude Opus 4.7 (주제/구조/생성) → 🟢 GPT-5.5 (검수)")
     logger.info("=" * 60)
 
     # 날짜 설정

@@ -279,22 +279,47 @@ OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
-def _sync_url_to_state():
-    """URL 쿼리 파라미터에서 상태를 복원합니다 (브라우저 뒤로가기 지원).
+def _get_url_state() -> tuple:
+    """현재 URL의 상태값을 튜플로 반환."""
+    params = st.query_params
+    return (
+        params.get("mode", "planning"),
+        params.get("step", "0"),
+        params.get("topic", None)
+    )
 
-    첫 로드 시에만 URL에서 상태를 복원합니다.
-    버튼 클릭으로 인한 rerun에서는 호출되지 않습니다.
+
+def _check_browser_navigation():
+    """브라우저 뒤로가기/앞으로가기 감지 및 상태 복원.
+
+    URL이 변경되었지만 세션의 '_last_url' 값과 다르면
+    브라우저 네비게이션으로 간주하고 URL에서 상태를 복원합니다.
     """
+    current_url = _get_url_state()
+    last_url = st.session_state.get("_last_url")
+
+    # 첫 로드 또는 URL 변경 감지
+    if last_url is None:
+        # 첫 로드: URL에서 상태 복원
+        _restore_state_from_url()
+        st.session_state._last_url = current_url
+    elif current_url != last_url:
+        # URL이 변경됨 (브라우저 뒤로가기/앞으로가기)
+        _restore_state_from_url()
+        st.session_state._last_url = current_url
+        st.rerun()
+
+
+def _restore_state_from_url():
+    """URL에서 상태를 복원합니다."""
     params = st.query_params
     url_mode = params.get("mode", None)
     url_step = params.get("step", None)
     url_topic = params.get("topic", None)
 
-    # URL에 mode가 없으면 복원할 것 없음
     if not url_mode:
         return
 
-    # URL에서 상태 복원
     if url_mode in ["planning", "generating", "management"]:
         st.session_state.app_mode = url_mode
 
@@ -314,12 +339,6 @@ def _sync_url_to_state():
 def _sync_state_to_url():
     """현재 상태를 URL 쿼리 파라미터에 반영합니다 (브라우저 히스토리 추가)."""
     mode = st.session_state.get("app_mode", "planning")
-    params = st.query_params
-
-    # 현재 URL 값
-    current_url_mode = params.get("mode", None)
-    current_url_step = params.get("step", None)
-    current_url_topic = params.get("topic", None)
 
     # 새 URL 값 계산
     if mode == "generating":
@@ -327,16 +346,22 @@ def _sync_state_to_url():
         topic_idx = st.session_state.get("current_topic_idx")
         new_step = str(step)
         new_topic = str(topic_idx) if topic_idx is not None else None
-
-        # URL이 다를 때만 업데이트 (불필요한 히스토리 방지)
-        if current_url_mode != mode or current_url_step != new_step or current_url_topic != new_topic:
-            if topic_idx is not None:
-                st.query_params.update({"mode": mode, "step": new_step, "topic": new_topic})
-            else:
-                st.query_params.update({"mode": mode, "step": new_step})
+        new_url = (mode, new_step, new_topic)
     else:
-        if current_url_mode != mode:
+        new_url = (mode, "0", None)
+
+    # 현재 URL과 다를 때만 업데이트
+    current_url = _get_url_state()
+    if current_url != new_url:
+        if mode == "generating" and new_url[2] is not None:
+            st.query_params.update({"mode": mode, "step": new_url[1], "topic": new_url[2]})
+        elif mode == "generating":
+            st.query_params.update({"mode": mode, "step": new_url[1]})
+        else:
             st.query_params.update({"mode": mode})
+
+    # 마지막 URL 저장 (다음 비교용)
+    st.session_state._last_url = new_url
 
 
 def init_session_state():
@@ -390,17 +415,12 @@ def init_session_state():
         "save_completed": False,
         "save_result": None,
     }
-    # 첫 로드 여부 확인 (URL 복원용)
-    is_first_load = "planning_month" not in st.session_state
-
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
 
-    # 첫 로드 시에만 URL에서 상태 복원 (브라우저 뒤로가기/새로고침)
-    # 버튼 클릭으로 인한 rerun에서는 호출 안 함
-    if is_first_load:
-        _sync_url_to_state()
+    # 브라우저 뒤로가기/앞으로가기 감지 및 상태 복원
+    _check_browser_navigation()
 
 
 def main():

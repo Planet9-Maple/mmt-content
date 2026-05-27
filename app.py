@@ -419,8 +419,9 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = val
 
-    # 브라우저 뒤로가기/앞으로가기 감지 및 상태 복원
-    _check_browser_navigation()
+    # ⚠️ 브라우저 뒤로가기 지원 임시 비활성화 (버튼 클릭 충돌 문제)
+    # _check_browser_navigation()
+    # 대신 앱 내 "← 이전" 버튼 사용 권장
 
 
 def main():

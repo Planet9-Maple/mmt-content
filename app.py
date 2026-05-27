@@ -279,6 +279,53 @@ OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
+def _sync_url_to_state():
+    """URL 쿼리 파라미터에서 상태를 복원합니다 (브라우저 뒤로가기 지원)."""
+    params = st.query_params
+
+    # mode 파라미터 읽기
+    url_mode = params.get("mode", None)
+    if url_mode in ["planning", "generating", "management"]:
+        # URL에서 복원된 모드가 현재 세션과 다르면 업데이트
+        if st.session_state.get("app_mode") != url_mode:
+            st.session_state.app_mode = url_mode
+
+    # generating 모드일 때 step과 topic_idx 복원
+    if url_mode == "generating":
+        url_step = params.get("step", None)
+        if url_step is not None:
+            try:
+                step_int = int(url_step)
+                if 0 <= step_int <= 3:
+                    st.session_state.gen_step = step_int
+            except (ValueError, TypeError):
+                pass
+
+        url_topic_idx = params.get("topic", None)
+        if url_topic_idx is not None:
+            try:
+                idx_int = int(url_topic_idx)
+                if idx_int >= 0:
+                    st.session_state.current_topic_idx = idx_int
+            except (ValueError, TypeError):
+                pass
+
+
+def _sync_state_to_url():
+    """현재 상태를 URL 쿼리 파라미터에 반영합니다 (브라우저 히스토리 추가)."""
+    mode = st.session_state.get("app_mode", "planning")
+
+    if mode == "generating":
+        step = st.session_state.get("gen_step", 0)
+        topic_idx = st.session_state.get("current_topic_idx")
+        if topic_idx is not None:
+            st.query_params.update({"mode": mode, "step": str(step), "topic": str(topic_idx)})
+        else:
+            st.query_params.update({"mode": mode, "step": str(step)})
+    else:
+        st.query_params.update({"mode": mode})
+
+
 def init_session_state():
     """세션 상태 초기화."""
     # 앱 시작 시 Google Sheets에서 저장된 월 확인
@@ -332,6 +379,9 @@ def init_session_state():
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
+
+    # URL에서 상태 복원 (브라우저 뒤로가기 지원)
+    _sync_url_to_state()
 
 
 def main():
@@ -447,6 +497,9 @@ def main():
         render_generating_view()
     else:
         render_management_view()
+
+    # 현재 상태를 URL에 동기화 (브라우저 히스토리 지원)
+    _sync_state_to_url()
 
 
 # ============================================================

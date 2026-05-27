@@ -1313,31 +1313,65 @@ def render_gen_step1_structure_review():
             except Exception as e:
                 st.warning(f"맥락 저장 실패 (진행에는 영향 없음): {e}")
 
-            # Step 1: 영어 생성
-            with st.spinner("🟣 Claude Opus가 영어 문장을 생성하고 있어요..."):
+            # Step 1: 영어 생성 + Step 2: AI 검수 (진행 상황 표시)
+            with st.status("🚀 콘텐츠 생성 중...", expanded=True) as status:
                 try:
+                    # 1단계: 영어 생성
+                    status.update(label="🟣 1/2 Claude가 영어 문장 생성 중...", state="running")
+                    st.write("📝 A/B/C 3안 영어 문장 생성 중...")
                     gen_result = pipeline.step3_generate(st.session_state.step2_result, category=category)
-                except Exception as e:
-                    st.error(f"영어 생성 실패: {e}")
-                    return
+                    st.write("✅ 영어 생성 완료!")
 
-            # Step 2: AI 검수 + 자동 수정 루프
-            with st.spinner("🟢 GPT-5.5가 품질을 검수하고 있어요... (문제 발견 시 자동 수정)"):
-                try:
-                    # 자동 수정 루프 사용 (최대 2회 시도)
-                    final_gen, review_result, fix_count = pipeline.step4_review_with_auto_fix(
-                        structure=st.session_state.step2_result,
-                        generated=gen_result,
-                        category=category,
-                        max_fix_attempts=2
-                    )
+                    # 2단계: AI 검수 + 자동 수정 루프 (최대 2회)
+                    max_fix_attempts = 2
+                    fix_count = 0
+                    current_gen = gen_result
 
-                    st.session_state.step3_result = final_gen
+                    for attempt in range(max_fix_attempts + 1):
+                        # 검수 실행
+                        status.update(label=f"🟢 2/2 GPT가 품질 검수 중... (검수 {attempt + 1}회차)", state="running")
+                        st.write(f"🔍 품질 검수 {attempt + 1}회차...")
+                        review_result = pipeline.step4_review(current_gen, category=category)
+
+                        # must_fix 체크
+                        feedback_by_level = pipeline.extract_must_fix_feedback(review_result, current_gen)
+                        has_any_must_fix = any(f["has_issues"] for f in feedback_by_level.values())
+
+                        if not has_any_must_fix:
+                            st.write("✅ 검수 통과!")
+                            break
+
+                        if attempt >= max_fix_attempts:
+                            st.write("⚠️ 최대 수정 횟수 도달, 현재 결과 사용")
+                            break
+
+                        # 자동 수정 필요
+                        fix_count += 1
+                        status.update(label=f"🔄 자동 수정 {fix_count}회차...", state="running")
+
+                        for level_key, level_feedback in feedback_by_level.items():
+                            if level_feedback["has_issues"]:
+                                level_num = level_key[-1]
+                                st.write(f"  🔧 Level {level_num} 수정 중...")
+                                current_gen = pipeline.step3_regenerate_targeted(
+                                    structure=st.session_state.step2_result,
+                                    existing_result=current_gen,
+                                    target_level=level_key,
+                                    feedback=level_feedback["feedback"],
+                                    target_sentences=level_feedback["sentences"],
+                                    preserve_variant="A",
+                                    category=category
+                                )
+
+                    # 결과 저장
+                    st.session_state.step3_result = current_gen
                     st.session_state.step4_result = review_result
 
-                    # 자동 수정 횟수 표시
+                    # 완료 상태 표시
                     if fix_count > 0:
-                        st.toast(f"🔄 AI가 {fix_count}회 자동 수정 후 검수 완료!")
+                        status.update(label=f"✅ 완료! (자동 수정 {fix_count}회)", state="complete")
+                    else:
+                        status.update(label="✅ 완료!", state="complete")
 
                     # Claude 추천안으로 기본 선택 설정
                     best_combo = review_result.get("overall_recommendation", {}).get("best_combination", {})
@@ -1348,7 +1382,8 @@ def render_gen_step1_structure_review():
                     st.session_state.gen_step = 2
                     st.rerun()
                 except Exception as e:
-                    st.error(f"AI 검수 실패: {e}")
+                    status.update(label="❌ 실패", state="error")
+                    st.error(f"생성/검수 실패: {e}")
 
 
 def render_gen_step2_content_with_review():

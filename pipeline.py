@@ -992,7 +992,7 @@ def step4_review(
 ) -> dict:
     """Step 4: 품질 검수 및 점수화 (GPT로 크로스 검수)."""
     logger.info("=" * 50)
-    logger.info("Step 4: 검수 시작 (GPT-5.5 - 크로스 프로바이더 편향 차단)")
+    logger.info("Step 4: 검수 시작 (GPT - 크로스 프로바이더 편향 차단)")
 
     # 디버깅: 입력 데이터 확인
     if not generated:

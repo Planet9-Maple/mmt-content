@@ -767,22 +767,25 @@ def save_monthly_plan_to_sheets(
 
 def load_monthly_plan_from_sheets(
     month: str,
-    spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
+    spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB",
+    fill_missing_dates: bool = True
 ) -> list:
     """Google Sheets에서 월간 기획을 로드합니다 (새 구조).
 
     Args:
         month: 월 (YYYY-MM 형식)
         spreadsheet_name: 스프레드시트 이름
+        fill_missing_dates: True면 해당 월의 모든 날짜를 채워서 반환
 
     Returns:
-        주제 리스트 (없으면 빈 리스트)
+        주제 리스트 (fill_missing_dates=True면 해당 월 전체 날짜 포함)
     """
     try:
         worksheet = get_or_create_plans_worksheet(spreadsheet_name)
         all_values = worksheet.get_all_values()
 
-        topics = []
+        # 시트에서 해당 월 데이터 로드
+        sheet_topics = {}  # date -> topic_data
         for row in all_values[1:]:  # 헤더 제외
             if row and row[0] and row[0].startswith(month):
                 # suggestions JSON 파싱
@@ -793,8 +796,9 @@ def load_monthly_plan_from_sheets(
                     except (json.JSONDecodeError, TypeError):
                         suggestions = []
 
-                topics.append({
-                    'date': row[0] if len(row) > 0 else '',
+                date_str = row[0] if len(row) > 0 else ''
+                sheet_topics[date_str] = {
+                    'date': date_str,
                     'day': row[1] if len(row) > 1 else '',
                     'topic': row[2] if len(row) > 2 else '',
                     'status': row[3] if len(row) > 3 else 'pending',
@@ -802,11 +806,52 @@ def load_monthly_plan_from_sheets(
                     'level2_context': row[5] if len(row) > 5 else '',
                     'level3_context': row[6] if len(row) > 6 else '',
                     'updated_at': row[7] if len(row) > 7 else '',
-                    'suggestions': suggestions
+                    'suggestions': suggestions,
+                    'is_review': False
+                }
+
+        # fill_missing_dates=False면 시트 데이터만 반환
+        if not fill_missing_dates:
+            topics = list(sheet_topics.values())
+            topics.sort(key=lambda x: x.get('date', ''))
+            return topics
+
+        # 해당 월의 모든 날짜 생성
+        from calendar import monthrange
+        year, mon = int(month[:4]), int(month[5:7])
+        _, last_day = monthrange(year, mon)
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+
+        topics = []
+        for day in range(1, last_day + 1):
+            date_str = f"{month}-{day:02d}"
+            date_obj = datetime(year, mon, day)
+            day_name = weekdays[date_obj.weekday()]
+            is_sunday = date_obj.weekday() == 6
+
+            if date_str in sheet_topics:
+                # 시트에 있으면 그 데이터 사용
+                topic_data = sheet_topics[date_str]
+                topic_data['is_review'] = is_sunday
+                if is_sunday and not topic_data.get('topic'):
+                    topic_data['topic'] = "📚 복습"
+                    topic_data['status'] = "review"
+                topics.append(topic_data)
+            else:
+                # 시트에 없으면 빈 데이터 생성
+                topics.append({
+                    'date': date_str,
+                    'day': day_name,
+                    'topic': "📚 복습" if is_sunday else "",
+                    'status': "review" if is_sunday else "planned",
+                    'level1_context': '',
+                    'level2_context': '',
+                    'level3_context': '',
+                    'updated_at': '',
+                    'suggestions': [],
+                    'is_review': is_sunday
                 })
 
-        # 날짜순 정렬
-        topics.sort(key=lambda x: x.get('date', ''))
         return topics
 
     except Exception as e:

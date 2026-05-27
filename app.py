@@ -282,7 +282,8 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 def _sync_url_to_state():
     """URL 쿼리 파라미터에서 상태를 복원합니다 (브라우저 뒤로가기 지원).
 
-    URL이 현재 상태와 다르면 URL을 따릅니다 (뒤로가기 감지).
+    첫 로드 시에만 URL에서 상태를 복원합니다.
+    버튼 클릭으로 인한 rerun에서는 호출되지 않습니다.
     """
     params = st.query_params
     url_mode = params.get("mode", None)
@@ -293,32 +294,21 @@ def _sync_url_to_state():
     if not url_mode:
         return
 
-    current_mode = st.session_state.get("app_mode", "planning")
-    current_step = st.session_state.get("gen_step", 0)
-    current_topic = st.session_state.get("current_topic_idx")
-
-    # URL과 현재 상태 비교
-    url_step_int = int(url_step) if url_step else 0
-    url_topic_int = int(url_topic) if url_topic else None
-
-    # URL과 상태가 다르면 URL로 복원 (브라우저 뒤로가기)
-    state_changed = False
-
-    if url_mode != current_mode:
+    # URL에서 상태 복원
+    if url_mode in ["planning", "generating", "management"]:
         st.session_state.app_mode = url_mode
-        state_changed = True
 
     if url_mode == "generating":
-        if url_step_int != current_step:
-            st.session_state.gen_step = url_step_int
-            state_changed = True
-        if url_topic_int != current_topic:
-            st.session_state.current_topic_idx = url_topic_int
-            state_changed = True
-
-    # 상태가 변경되면 rerun (뒤로가기 반영)
-    if state_changed:
-        st.rerun()
+        if url_step:
+            try:
+                st.session_state.gen_step = int(url_step)
+            except (ValueError, TypeError):
+                pass
+        if url_topic:
+            try:
+                st.session_state.current_topic_idx = int(url_topic)
+            except (ValueError, TypeError):
+                pass
 
 
 def _sync_state_to_url():
@@ -400,12 +390,17 @@ def init_session_state():
         "save_completed": False,
         "save_result": None,
     }
+    # 첫 로드 여부 확인 (URL 복원용)
+    is_first_load = "planning_month" not in st.session_state
+
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
 
-    # URL에서 상태 복원 (브라우저 뒤로가기 지원)
-    _sync_url_to_state()
+    # 첫 로드 시에만 URL에서 상태 복원 (브라우저 뒤로가기/새로고침)
+    # 버튼 클릭으로 인한 rerun에서는 호출 안 함
+    if is_first_load:
+        _sync_url_to_state()
 
 
 def main():

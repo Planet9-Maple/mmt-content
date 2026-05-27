@@ -282,58 +282,71 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 def _sync_url_to_state():
     """URL 쿼리 파라미터에서 상태를 복원합니다 (브라우저 뒤로가기 지원).
 
-    Note: 세션 상태가 이미 설정된 경우 URL을 무시합니다 (버튼 클릭 우선).
-    URL 복원은 브라우저 뒤로가기/새로고침 시에만 적용됩니다.
+    URL이 현재 상태와 다르면 URL을 따릅니다 (뒤로가기 감지).
     """
-    # 세션이 이미 초기화된 경우 (버튼 클릭 등으로 상태 변경됨) URL 무시
-    # 첫 로드 시에만 URL에서 복원
-    if st.session_state.get("_url_synced"):
+    params = st.query_params
+    url_mode = params.get("mode", None)
+    url_step = params.get("step", None)
+    url_topic = params.get("topic", None)
+
+    # URL에 mode가 없으면 복원할 것 없음
+    if not url_mode:
         return
 
-    params = st.query_params
+    current_mode = st.session_state.get("app_mode", "planning")
+    current_step = st.session_state.get("gen_step", 0)
+    current_topic = st.session_state.get("current_topic_idx")
 
-    # mode 파라미터 읽기
-    url_mode = params.get("mode", None)
-    if url_mode in ["planning", "generating", "management"]:
+    # URL과 현재 상태 비교
+    url_step_int = int(url_step) if url_step else 0
+    url_topic_int = int(url_topic) if url_topic else None
+
+    # URL과 상태가 다르면 URL로 복원 (브라우저 뒤로가기)
+    state_changed = False
+
+    if url_mode != current_mode:
         st.session_state.app_mode = url_mode
+        state_changed = True
 
-    # generating 모드일 때 step과 topic_idx 복원
     if url_mode == "generating":
-        url_step = params.get("step", None)
-        if url_step is not None:
-            try:
-                step_int = int(url_step)
-                if 0 <= step_int <= 3:
-                    st.session_state.gen_step = step_int
-            except (ValueError, TypeError):
-                pass
+        if url_step_int != current_step:
+            st.session_state.gen_step = url_step_int
+            state_changed = True
+        if url_topic_int != current_topic:
+            st.session_state.current_topic_idx = url_topic_int
+            state_changed = True
 
-        url_topic_idx = params.get("topic", None)
-        if url_topic_idx is not None:
-            try:
-                idx_int = int(url_topic_idx)
-                if idx_int >= 0:
-                    st.session_state.current_topic_idx = idx_int
-            except (ValueError, TypeError):
-                pass
-
-    # URL 동기화 완료 표시 (이후 rerun에서는 URL 무시)
-    st.session_state._url_synced = True
+    # 상태가 변경되면 rerun (뒤로가기 반영)
+    if state_changed:
+        st.rerun()
 
 
 def _sync_state_to_url():
     """현재 상태를 URL 쿼리 파라미터에 반영합니다 (브라우저 히스토리 추가)."""
     mode = st.session_state.get("app_mode", "planning")
+    params = st.query_params
 
+    # 현재 URL 값
+    current_url_mode = params.get("mode", None)
+    current_url_step = params.get("step", None)
+    current_url_topic = params.get("topic", None)
+
+    # 새 URL 값 계산
     if mode == "generating":
         step = st.session_state.get("gen_step", 0)
         topic_idx = st.session_state.get("current_topic_idx")
-        if topic_idx is not None:
-            st.query_params.update({"mode": mode, "step": str(step), "topic": str(topic_idx)})
-        else:
-            st.query_params.update({"mode": mode, "step": str(step)})
+        new_step = str(step)
+        new_topic = str(topic_idx) if topic_idx is not None else None
+
+        # URL이 다를 때만 업데이트 (불필요한 히스토리 방지)
+        if current_url_mode != mode or current_url_step != new_step or current_url_topic != new_topic:
+            if topic_idx is not None:
+                st.query_params.update({"mode": mode, "step": new_step, "topic": new_topic})
+            else:
+                st.query_params.update({"mode": mode, "step": new_step})
     else:
-        st.query_params.update({"mode": mode})
+        if current_url_mode != mode:
+            st.query_params.update({"mode": mode})
 
 
 def init_session_state():

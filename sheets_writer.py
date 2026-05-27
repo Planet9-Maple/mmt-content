@@ -385,10 +385,14 @@ def delete_content(row_number: int, spreadsheet_name: str = "마미톡잉글리�
 
 
 def sync_monthly_plan_with_sheet(spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB") -> dict:
-    """시트의 실제 콘텐츠와 월간 기획의 상태를 동기화합니다.
+    """시트의 실제 콘텐츠와 월간 기획의 상태를 동기화합니다 (개별 upsert 방식).
 
     - 시트에 있는 콘텐츠: completed
     - 시트에 없는 콘텐츠: pending (재생성 가능)
+
+    Note:
+        기존의 전체 덮어쓰기 방식에서 개별 upsert 방식으로 변경됨.
+        status만 업데이트하고 다른 데이터는 보존함.
     """
     try:
         # 시트의 실제 콘텐츠 날짜 목록
@@ -398,7 +402,7 @@ def sync_monthly_plan_with_sheet(spreadsheet_name: str = "마미톡잉글리시 
         # 저장된 모든 월의 기획 확인
         saved_months = get_all_saved_months(spreadsheet_name)
 
-        updated_months = []
+        updated_count = 0
         for month_info in saved_months:
             month = month_info['month']
             topics = load_monthly_plan_from_sheets(month, spreadsheet_name)
@@ -406,29 +410,29 @@ def sync_monthly_plan_with_sheet(spreadsheet_name: str = "마미톡잉글리시 
             if not topics:
                 continue
 
-            changed = False
             for topic in topics:
                 date = topic.get('date', '')
                 current_status = topic.get('status', 'pending')
+                topic_name = topic.get('topic', '')
 
+                new_status = None
                 if date in sheet_dates:
                     # 시트에 있으면 completed
                     if current_status != 'completed':
-                        topic['status'] = 'completed'
-                        changed = True
+                        new_status = 'completed'
                 else:
                     # 시트에 없으면 pending (재생성 가능)
                     if current_status == 'completed':
-                        topic['status'] = 'pending'
-                        changed = True
+                        new_status = 'pending'
 
-            if changed:
-                save_monthly_plan_to_sheets(month, topics, spreadsheet_name)
-                updated_months.append(month)
+                # 상태 변경이 필요한 경우만 개별 업데이트
+                if new_status:
+                    upsert_topic_status(date, topic_name, new_status, spreadsheet_name)
+                    updated_count += 1
 
         return {
             'success': True,
-            'synced_months': updated_months,
+            'updated_count': updated_count,
             'sheet_dates': list(sheet_dates)
         }
     except Exception as e:
@@ -688,7 +692,7 @@ def save_monthly_plan_to_sheets(
     topics: list,
     spreadsheet_name: str = "마미톡잉글리시 콘텐츠 DB"
 ) -> dict:
-    """월간 기획을 Google Sheets에 저장합니다 (새 구조: 날짜별 행).
+    """월간 기획을 Google Sheets에 저장합니다 (upsert 방식 - 기존 데이터 보존).
 
     Args:
         month: 월 (YYYY-MM 형식)
@@ -697,31 +701,38 @@ def save_monthly_plan_to_sheets(
 
     Returns:
         {'success': True} or {'success': False, 'error': '...'}
+
+    Note:
+        기존의 삭제 후 재삽입 방식에서 upsert 방식으로 변경됨.
+        - 기존 날짜가 있으면 업데이트
+        - 없으면 새로 추가
+        - 시트에만 있고 topics에 없는 데이터는 보존됨
     """
     try:
         worksheet = get_or_create_plans_worksheet(spreadsheet_name)
         all_values = worksheet.get_all_values()
 
-        # 해당 월의 기존 행 찾기 (삭제 후 재삽입)
-        rows_to_delete = []
+        # 기존 날짜별 행 번호 매핑
+        existing_rows = {}  # {date: row_number}
         for i, row in enumerate(all_values[1:], start=2):
-            if row and row[0] and row[0].startswith(month):
-                rows_to_delete.append(i)
+            if row and row[0]:
+                existing_rows[row[0]] = i
 
-        # 역순으로 삭제 (인덱스 밀림 방지)
-        for row_num in reversed(rows_to_delete):
-            worksheet.delete_rows(row_num)
-
-        # 새 데이터 추가
         now = datetime.now().isoformat()
-        new_rows = []
+        updated_count = 0
+        inserted_count = 0
+
         for t in topics:
+            date = t.get('date', '')
+            if not date:
+                continue
+
             # suggestions를 JSON 문자열로 변환
             suggestions = t.get('suggestions', [])
             suggestions_json = json.dumps(suggestions, ensure_ascii=False) if suggestions else ''
 
-            new_rows.append([
-                t.get('date', ''),
+            row_data = [
+                date,
                 t.get('day', ''),
                 t.get('topic', ''),
                 t.get('status', 'pending'),
@@ -730,12 +741,25 @@ def save_monthly_plan_to_sheets(
                 t.get('level3_context', ''),
                 now,
                 suggestions_json
-            ])
+            ]
 
-        if new_rows:
-            worksheet.append_rows(new_rows, value_input_option='USER_ENTERED')
+            if date in existing_rows:
+                # 기존 행 업데이트
+                row_num = existing_rows[date]
+                worksheet.update(f'A{row_num}:I{row_num}', [row_data])
+                updated_count += 1
+            else:
+                # 새 행 추가
+                worksheet.append_row(row_data, value_input_option='USER_ENTERED')
+                inserted_count += 1
 
-        return {'success': True, 'month': month, 'count': len(new_rows)}
+        return {
+            'success': True,
+            'month': month,
+            'updated': updated_count,
+            'inserted': inserted_count,
+            'total': updated_count + inserted_count
+        }
 
     except Exception as e:
         return {'success': False, 'error': str(e)}

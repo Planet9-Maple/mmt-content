@@ -135,6 +135,32 @@ def check_plan_exists(month: datetime) -> bool:
     return len(topics) > 0
 
 
+def _auto_save_topic(date: str, topic: str, status: str) -> bool:
+    """주제 변경 시 즉시 Google Sheets에 저장 (자동 저장).
+
+    Args:
+        date: 날짜 (YYYY-MM-DD)
+        topic: 주제명
+        status: 상태 (planned, in_progress, completed)
+
+    Returns:
+        저장 성공 여부
+    """
+    try:
+        import sheets_writer
+        result = sheets_writer.upsert_topic_status(date, topic, status)
+        if result.get("success"):
+            # 저장 성공 시 조용히 토스트 표시
+            st.toast(f"💾 {date} 주제 저장됨", icon="✅")
+            return True
+        else:
+            st.toast(f"⚠️ 저장 실패: {result.get('error', '?')}", icon="⚠️")
+            return False
+    except Exception as e:
+        st.toast(f"⚠️ 저장 실패: {e}", icon="⚠️")
+        return False
+
+
 # ============================================================
 # API 상태 확인
 # ============================================================
@@ -778,10 +804,14 @@ def render_topic_list():
                         )
                         if new_topic and new_topic != topic["topic"]:
                             st.session_state.planned_topics[idx]["topic"] = new_topic
+                            # 🔥 자동 저장: 주제 변경 시 즉시 Sheets에 저장
+                            _auto_save_topic(topic["date"], new_topic, topic.get("status", "planned"))
                     else:
                         # 드롭다운 선택
                         if selected != topic["topic"]:
                             st.session_state.planned_topics[idx]["topic"] = selected
+                            # 🔥 자동 저장: 주제 변경 시 즉시 Sheets에 저장
+                            _auto_save_topic(topic["date"], selected, topic.get("status", "planned"))
                 else:
                     # suggestions 없으면 텍스트 입력 + 새 추천 버튼
                     subcol1, subcol2 = st.columns([4, 1])
@@ -795,6 +825,8 @@ def render_topic_list():
                         )
                         if new_topic != topic["topic"]:
                             st.session_state.planned_topics[idx]["topic"] = new_topic
+                            # 🔥 자동 저장: 주제 변경 시 즉시 Sheets에 저장
+                            _auto_save_topic(topic["date"], new_topic, topic.get("status", "planned"))
                     with subcol2:
                         if st.button("🔄", key=f"refresh_{idx}", help="Gemini로 새 주제 추천 받기"):
                             st.session_state[f"regenerate_suggestions_{idx}"] = True

@@ -255,7 +255,32 @@ def call_gpt(
     usage = response.usage
     logger.info(f"토큰 사용: input={usage.prompt_tokens}, output={usage.completion_tokens}")
 
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    finish_reason = response.choices[0].finish_reason
+
+    # finish_reason 체크 - 토큰 한도 도달 시 경고
+    if finish_reason == "length":
+        logger.warning(f"⚠️ GPT 응답이 max_tokens({max_tokens})에 도달하여 잘렸습니다!")
+        logger.warning("max_tokens 값을 늘려야 할 수 있습니다.")
+
+    # 디버깅: 응답 내용 로깅
+    if content is None:
+        logger.error("GPT 응답이 None입니다!")
+        logger.error(f"finish_reason: {finish_reason}")
+        if finish_reason == "length":
+            raise ValueError(f"GPT 응답이 토큰 한도({max_tokens})에 도달하여 잘렸습니다. max_tokens를 늘려주세요.")
+        raise ValueError("GPT 응답이 비어있습니다 (None)")
+
+    if not content.strip():
+        logger.error("GPT 응답이 빈 문자열입니다!")
+        logger.error(f"finish_reason: {finish_reason}")
+        if finish_reason == "length":
+            raise ValueError(f"GPT 응답이 토큰 한도({max_tokens})에 도달하여 잘렸습니다. max_tokens를 늘려주세요.")
+        raise ValueError("GPT 응답이 빈 문자열입니다")
+
+    logger.info(f"GPT 응답 길이: {len(content)} chars, finish_reason: {finish_reason}")
+
+    return content
 
 
 def call_api(step: int, system_prompt: str, user_message: str, config: dict) -> str:
@@ -277,13 +302,24 @@ def call_api(step: int, system_prompt: str, user_message: str, config: dict) -> 
 
 def extract_json(text: str) -> dict:
     """응답 텍스트에서 JSON 추출."""
+    # 디버깅: 입력 텍스트 정보
+    logger.debug(f"extract_json 입력 길이: {len(text) if text else 0}")
+    if text:
+        logger.debug(f"extract_json 입력 시작 100자: {repr(text[:100])}")
+
+    if not text:
+        logger.error("extract_json: 입력 텍스트가 비어있음!")
+        raise ValueError("JSON 추출 실패: 입력 텍스트가 비어있습니다")
+
     # ```json ... ``` 블록 추출 시도
     json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
     if json_match:
         json_str = json_match.group(1).strip()
+        logger.debug(f"마크다운 코드블록에서 JSON 추출: {len(json_str)} chars")
     else:
         # 전체 텍스트가 JSON인 경우
         json_str = text.strip()
+        logger.debug(f"전체 텍스트를 JSON으로 시도: {len(json_str)} chars")
 
     # JSON 파싱 시도
     try:
@@ -957,6 +993,17 @@ def step4_review(
     """Step 4: 품질 검수 및 점수화 (GPT로 크로스 검수)."""
     logger.info("=" * 50)
     logger.info("Step 4: 검수 시작 (GPT-5.5 - 크로스 프로바이더 편향 차단)")
+
+    # 디버깅: 입력 데이터 확인
+    if not generated:
+        logger.error("Step 4 입력 데이터가 비어있음!")
+        raise ValueError("Step 4: 생성된 콘텐츠가 없습니다")
+
+    levels = generated.get("levels", {})
+    if not levels:
+        logger.error("Step 4: levels 키가 비어있음!")
+        logger.error(f"generated 키들: {list(generated.keys())}")
+        raise ValueError("Step 4: 생성된 콘텐츠에 levels가 없습니다")
 
     config = load_config(4)
 

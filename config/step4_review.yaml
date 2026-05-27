@@ -7,7 +7,7 @@
 provider: "gpt"
 model: "gpt-5.5"
 temperature: 0.2
-max_tokens: 4000
+max_tokens: 8000
 
 system_prompt: |
   당신은 마미톡잉글리시의 외부 콘텐츠 품질 검수자(QA)입니다.

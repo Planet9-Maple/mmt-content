@@ -337,8 +337,9 @@ def init_session_state():
         try:
             import sheets_writer
 
-            # 시트와 월간 기획 동기화 (삭제된 콘텐츠 = pending으로)
-            sheets_writer.sync_monthly_plan_with_sheet()
+            # ⚠️ 자동 동기화 비활성화 (데이터 손실 방지)
+            # sync_monthly_plan_with_sheet()는 수동으로만 호출
+            # sheets_writer.sync_monthly_plan_with_sheet()
 
             saved_months = sheets_writer.get_all_saved_months()
             if saved_months:
@@ -935,19 +936,49 @@ def render_topic_list():
             st.rerun()
 
     with col2:
+        # 재생성 버튼 - 확인 필요
         if st.button("🔄 Gemini로 재생성", use_container_width=True):
-            # 기존 기획 삭제 후 재생성
-            st.session_state.planned_topics = []
-            delete_monthly_plan(st.session_state.planning_month)
+            st.session_state["confirm_regenerate"] = True
             st.rerun()
 
     with col3:
+        # 삭제 버튼 - 확인 필요
         if st.button("🗑️ 초기화 & 삭제", type="secondary", use_container_width=True):
-            # 세션 및 Sheets에서 삭제
-            st.session_state.planned_topics = []
-            delete_monthly_plan(st.session_state.planning_month)
-            st.toast("🗑️ 기획이 초기화되고 Sheets에서도 삭제되었습니다.")
+            st.session_state["confirm_delete_all"] = True
             st.rerun()
+
+    # 재생성 확인 팝업
+    if st.session_state.get("confirm_regenerate"):
+        existing_count = len([t for t in topics if t.get("topic") and not t.get("is_review")])
+        st.warning(f"⚠️ **{existing_count}개의 주제가 모두 삭제**되고 새로 생성됩니다. 계속하시겠습니까?")
+        col_yes, col_no = st.columns(2)
+        with col_yes:
+            if st.button("✅ 삭제 후 재생성", type="primary"):
+                del st.session_state["confirm_regenerate"]
+                st.session_state.planned_topics = []
+                delete_monthly_plan(st.session_state.planning_month)
+                st.rerun()
+        with col_no:
+            if st.button("❌ 취소"):
+                del st.session_state["confirm_regenerate"]
+                st.rerun()
+
+    # 삭제 확인 팝업
+    if st.session_state.get("confirm_delete_all"):
+        existing_count = len([t for t in topics if t.get("topic") and not t.get("is_review")])
+        st.error(f"🚨 **{existing_count}개의 주제가 영구 삭제**됩니다. 이 작업은 되돌릴 수 없습니다!")
+        col_yes, col_no = st.columns(2)
+        with col_yes:
+            if st.button("🗑️ 영구 삭제", type="primary"):
+                del st.session_state["confirm_delete_all"]
+                st.session_state.planned_topics = []
+                delete_monthly_plan(st.session_state.planning_month)
+                st.toast("🗑️ 기획이 삭제되었습니다.")
+                st.rerun()
+        with col_no:
+            if st.button("❌ 취소"):
+                del st.session_state["confirm_delete_all"]
+                st.rerun()
 
     with col4:
         # 복습일 제외한 콘텐츠만 계산

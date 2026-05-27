@@ -280,15 +280,22 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 
 def _sync_url_to_state():
-    """URL 쿼리 파라미터에서 상태를 복원합니다 (브라우저 뒤로가기 지원)."""
+    """URL 쿼리 파라미터에서 상태를 복원합니다 (브라우저 뒤로가기 지원).
+
+    Note: 세션 상태가 이미 설정된 경우 URL을 무시합니다 (버튼 클릭 우선).
+    URL 복원은 브라우저 뒤로가기/새로고침 시에만 적용됩니다.
+    """
+    # 세션이 이미 초기화된 경우 (버튼 클릭 등으로 상태 변경됨) URL 무시
+    # 첫 로드 시에만 URL에서 복원
+    if st.session_state.get("_url_synced"):
+        return
+
     params = st.query_params
 
     # mode 파라미터 읽기
     url_mode = params.get("mode", None)
     if url_mode in ["planning", "generating", "management"]:
-        # URL에서 복원된 모드가 현재 세션과 다르면 업데이트
-        if st.session_state.get("app_mode") != url_mode:
-            st.session_state.app_mode = url_mode
+        st.session_state.app_mode = url_mode
 
     # generating 모드일 때 step과 topic_idx 복원
     if url_mode == "generating":
@@ -309,6 +316,9 @@ def _sync_url_to_state():
                     st.session_state.current_topic_idx = idx_int
             except (ValueError, TypeError):
                 pass
+
+    # URL 동기화 완료 표시 (이후 rerun에서는 URL 무시)
+    st.session_state._url_synced = True
 
 
 def _sync_state_to_url():

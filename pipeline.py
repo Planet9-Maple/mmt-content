@@ -325,6 +325,11 @@ def extract_json(text: str) -> dict:
         brace_match = re.search(r'\{[\s\S]*\}', json_str)
         if brace_match:
             return json.loads(brace_match.group(0))
+        else:
+            # JSON 블록을 찾지 못한 경우
+            logger.error(f"JSON 블록을 찾을 수 없음")
+            logger.error(f"원본 텍스트: {text[:500]}...")
+            raise ValueError(f"JSON 블록을 찾을 수 없음: {text[:200]}...")
     except json.JSONDecodeError as e:
         logger.error(f"JSON 파싱 실패: {e}")
         logger.error(f"원본 텍스트: {text[:500]}...")
